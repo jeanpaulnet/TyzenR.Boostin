@@ -29,6 +29,11 @@ export default function App() {
   const [scannedDescription, setScannedDescription] = useState("");
   const [scannedPrompt, setScannedPrompt] = useState("");
 
+  // Model & Parameter States (Shared between components)
+  const [model, setModel] = useState("gemini-2.5-flash-image");
+  const [aspectRatio, setAspectRatio] = useState("1:1");
+  const [resolution, setResolution] = useState("1K");
+
   // Loading Pipeline States
   const [isLoading, setIsLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState<"scrape" | "copy" | "image" | "azure">("scrape");
@@ -45,6 +50,9 @@ export default function App() {
           setScannedTitle(parsed[0].title);
           setScannedDescription(parsed[0].description);
           setScannedPrompt(parsed[0].imagePrompt);
+          setModel(parsed[0].model || "gemini-2.5-flash-image");
+          setAspectRatio(parsed[0].aspectRatio || "1:1");
+          setResolution(parsed[0].resolution || "1K");
         }
       }
     } catch (e) {
@@ -79,6 +87,9 @@ export default function App() {
     setScannedTitle(item.title);
     setScannedDescription(item.description);
     setScannedPrompt(item.imagePrompt);
+    setModel(item.model || "gemini-2.5-flash-image");
+    setAspectRatio(item.aspectRatio || "1:1");
+    setResolution(item.resolution || "1K");
   };
 
   // Deleting an item
@@ -164,44 +175,17 @@ export default function App() {
       setScannedDescription(scanData.description);
       setScannedPrompt(scanData.imagePrompt);
 
-      // Step 2: Image Generation
-      setLoadingStep("image");
-      const imageResponse = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: scanData.imagePrompt,
-          model,
-          aspectRatio,
-          resolution,
-          azureConfig: {
-            connectionString: settings.azureConnectionString,
-            containerName: settings.azureContainerName,
-          },
-        }),
-      });
-
-      if (!imageResponse.ok) {
-        const errorData = await imageResponse.json().catch(() => ({}));
-        throw new Error(errorData.error || "Image generation pipeline failed. Please try a different model/ratio.");
-      }
-
-      setLoadingStep("azure");
-      const imageData = await imageResponse.json();
-      if (!imageData.success) {
-        throw new Error(imageData.error || "Image asset creation pipeline error.");
-      }
-
-      // Step 3: Success! Create a new historical item
+      // We do NOT generate the image on scan click anymore.
+      // We directly save the item as "Not Generated".
       const newItem: ScannedItem = {
         id: `boost_${Date.now()}`,
         url,
         title: scanData.title,
         description: scanData.description,
         imagePrompt: scanData.imagePrompt,
-        imageUrl: imageData.imageUrl, // local cache
-        azureUrl: imageData.azureUrl, // actual/simulated azure link
-        azureStatus: imageData.azureStatus,
+        imageUrl: "", // empty because not generated yet
+        azureUrl: "", // empty because not generated yet
+        azureStatus: "Not Generated",
         model,
         aspectRatio,
         resolution,
@@ -289,20 +273,20 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-950 via-slate-900 to-purple-950 text-slate-100 flex flex-col antialiased">
+    <div className="min-h-screen bg-[#f8fafc] text-slate-800 flex flex-col antialiased">
       
       {/* Upper Navigation Bar */}
-      <header className="sticky top-0 z-40 bg-white/5 border-b border-white/10 backdrop-blur-md px-6 py-4 flex items-center justify-between shadow-lg shadow-black/10">
+      <header className="sticky top-0 z-40 bg-slate-900 border-b border-slate-800 px-6 py-4 flex items-center justify-between shadow-lg">
         
         {/* Brand / Logo */}
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-gradient-to-tr from-cyan-400 to-indigo-500 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/30">
+          <div className="w-9 h-9 bg-gradient-to-tr from-purple-600 via-pink-500 to-blue-500 rounded-lg flex items-center justify-center shadow-lg shadow-purple-500/30">
             <Sparkles className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-white tracking-tight font-display flex items-center gap-1.5 leading-none">
-              <span>Boostin</span>
-              <span className="text-[9px] px-1.5 py-0.5 bg-cyan-400/10 text-cyan-400 rounded-full font-bold uppercase tracking-wider border border-cyan-400/20">Suite</span>
+            <h1 className="text-xl font-black text-white tracking-tight font-display flex items-center gap-1.5 leading-none">
+              <span>BOOSTIN</span>
+              <span className="bg-gradient-to-r from-purple-600 via-pink-500 to-blue-500 bg-clip-text text-transparent font-black tracking-wider">AI</span>
             </h1>
             <p className="text-[10px] text-slate-400 font-medium mt-0.5">Generate high-converting social creatives from raw URLs</p>
           </div>
@@ -321,8 +305,8 @@ export default function App() {
             onClick={() => setIsSettingsOpen(true)}
             className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-200 rounded-xl border border-white/10 text-xs font-semibold transition-all active:scale-[0.98] shadow-sm"
           >
-            <SettingsIcon className="w-4 h-4 text-cyan-400" />
-            <span>Brand & Azure Credentials</span>
+            <SettingsIcon className="w-4 h-4 text-indigo-400" />
+            <span>Brand & Templates</span>
           </button>
         </div>
 
@@ -349,7 +333,6 @@ export default function App() {
           <div className="lg:col-span-5 flex flex-col h-[calc(100vh-220px)] lg:h-[720px] overflow-y-auto">
             <WorkPane
               onScan={handleScan}
-              onRegenerateImage={handleRegenerateImage}
               isLoading={isLoading}
               loadingStep={loadingStep}
               scannedTitle={scannedTitle}
@@ -357,6 +340,9 @@ export default function App() {
               scannedPrompt={scannedPrompt}
               onUpdateScannedFields={handleUpdateScannedFields}
               settings={settings}
+              model={model}
+              aspectRatio={aspectRatio}
+              resolution={resolution}
             />
           </div>
 
@@ -365,6 +351,15 @@ export default function App() {
             <PreviewPane
               activeItem={getActiveItem()}
               isLoading={isLoading}
+              model={model}
+              setModel={setModel}
+              aspectRatio={aspectRatio}
+              setAspectRatio={setAspectRatio}
+              resolution={resolution}
+              setResolution={setResolution}
+              scannedPrompt={scannedPrompt}
+              onRegenerateImage={handleRegenerateImage}
+              onUpdateScannedFields={handleUpdateScannedFields}
             />
           </div>
 
@@ -373,16 +368,16 @@ export default function App() {
       </main>
 
       {/* Subtle footer stats */}
-      <footer className="h-10 flex items-center px-8 bg-black/40 border-t border-white/5 justify-between">
+      <footer className="h-10 flex items-center px-8 bg-white border-t border-slate-200/80 justify-between text-slate-500">
         <div className="flex items-center gap-4">
-          <span className="text-[9px] text-slate-500 uppercase tracking-widest">
-            Status: <span className="text-emerald-400">Connected</span>
+          <span className="text-[9px] uppercase tracking-widest">
+            Status: <span className="text-emerald-600 font-bold">Connected</span>
           </span>
-          <span className="text-[9px] text-slate-500 uppercase tracking-widest">
-            Azure Storage: <span className="text-cyan-400 font-semibold">{settings.azureConnectionString ? "Armed" : "Simulated"}</span>
+          <span className="text-[9px] uppercase tracking-widest">
+            Azure Storage: <span className="text-indigo-600 font-semibold">{settings.azureConnectionString ? "Armed" : "Simulated"}</span>
           </span>
         </div>
-        <div className="text-[9px] text-slate-500 uppercase tracking-widest font-medium hidden sm:block">
+        <div className="text-[9px] uppercase tracking-widest font-medium hidden sm:block">
           Boostin Engine v2.0.4 - Cloud AI Accelerated
         </div>
       </footer>

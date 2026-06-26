@@ -109,10 +109,15 @@ Scraped Page Content Snippet: ${pageTextSnippet || "None"}
 
 Please analyze the URL and the content, and generate the following three outputs in a structured JSON response:
 1. "title": A polished, click-worthy, engaging headline/title representing the article or page (max 80 chars).
-2. "description": A highly engaging social media post summary ready to share on Instagram/Facebook. It must include:
-   - A captivating hook summarizing the core value or content.
-   - The URL: ${url}
-   - Relevant trending hashtags/tags (3-5 tags).
+2. "description": A highly engaging social media post containing a 2-paragraph summary of the article's core values or content.
+   It MUST be formatted exactly like this:
+   [Paragraph 1 of summary]
+   
+   [Paragraph 2 of summary]
+   
+   More Info: ${url}
+   
+   #tag1 #tag2 #tag3 (3-5 relevant trending hashtags/tags with #).
 3. "imagePrompt": An optimized, highly descriptive visual prompt for generating a picture that summarizes the content of the article.
    Follow this exact instruction format:
    "create an ultra-realistic cinematic magazine like detailed picture with vivid colors summarizing content of ${url}. Create title from article on top. Create subtitle from ${bizName || "Your Biz"} bottom with ${watermark || "Watermark"} below it."
@@ -136,7 +141,7 @@ Do not include any other text besides the JSON.`;
           type: Type.OBJECT,
           properties: {
             title: { type: Type.STRING, description: "Engaging headline for the scanned content" },
-            description: { type: Type.STRING, description: "Sharing-ready social media caption with URL and hashtags" },
+            description: { type: Type.STRING, description: "2-paragraph summary followed by More Info and hashtags" },
             imagePrompt: { type: Type.STRING, description: "Descriptive image prompt conforming to the template" },
           },
           required: ["title", "description", "imagePrompt"],

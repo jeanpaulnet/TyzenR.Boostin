@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from "react";
-import { Link2, Sparkles, Check, Copy, Sliders, Image, Eye, RotateCw, Monitor, Compass } from "lucide-react";
+import React, { useState } from "react";
+import { Link2, Sparkles, Check, Copy, Image, RotateCw } from "lucide-react";
 import { Settings } from "../types";
 
 interface WorkPaneProps {
   onScan: (url: string, model: string, aspectRatio: string, resolution: string) => Promise<void>;
-  onRegenerateImage: (prompt: string, model: string, aspectRatio: string, resolution: string) => Promise<void>;
   isLoading: boolean;
   loadingStep: string;
   scannedTitle: string;
@@ -12,11 +11,13 @@ interface WorkPaneProps {
   scannedPrompt: string;
   onUpdateScannedFields: (fields: { title?: string; description?: string; prompt?: string }) => void;
   settings: Settings;
+  model: string;
+  aspectRatio: string;
+  resolution: string;
 }
 
 export default function WorkPane({
   onScan,
-  onRegenerateImage,
   isLoading,
   loadingStep,
   scannedTitle,
@@ -24,11 +25,11 @@ export default function WorkPane({
   scannedPrompt,
   onUpdateScannedFields,
   settings,
+  model,
+  aspectRatio,
+  resolution,
 }: WorkPaneProps) {
   const [url, setUrl] = useState("");
-  const [model, setModel] = useState("gemini-2.5-flash-image");
-  const [aspectRatio, setAspectRatio] = useState("1:1");
-  const [resolution, setResolution] = useState("1K");
   const [copiedDesc, setCopiedDesc] = useState(false);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -52,12 +53,8 @@ export default function WorkPane({
     await onScan(url, model, aspectRatio, resolution);
   };
 
-  const handleRegenerate = async () => {
-    if (!scannedPrompt) return;
-    await onRegenerateImage(scannedPrompt, model, aspectRatio, resolution);
-  };
-
   const copyToClipboard = (text: string, type: "desc" | "prompt") => {
+    if (!text) return;
     navigator.clipboard.writeText(text);
     if (type === "desc") {
       setCopiedDesc(true);
@@ -69,23 +66,12 @@ export default function WorkPane({
   };
 
   return (
-    <div className="flex flex-col h-full bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl shadow-xl overflow-y-auto p-6 space-y-6">
+    <div className="flex flex-col h-full bg-white/80 backdrop-blur-md border border-slate-200/80 rounded-2xl shadow-xl overflow-y-auto p-6 space-y-6">
       
-      {/* Pane Heading */}
-      <div className="flex items-center gap-2">
-        <div className="p-1.5 bg-indigo-500/10 rounded-lg text-cyan-400">
-          <Compass className="w-5 h-5" />
-        </div>
-        <div>
-          <h2 className="text-base font-bold text-slate-100 font-display">Work Center</h2>
-          <p className="text-xs text-slate-400">Scan URLs and customize AI parameters</p>
-        </div>
-      </div>
-
       {/* Main Scan Form */}
       <form onSubmit={handleScanSubmit} className="space-y-4">
         <div>
-          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 font-display">
             Destination URL to Scan
           </label>
           <div className="relative">
@@ -101,14 +87,14 @@ export default function WorkPane({
                 if (errorMsg) setErrorMsg("");
               }}
               placeholder="https://techcrunch.com/article-slug"
-              className={`w-full pl-10 pr-4 py-2.5 text-sm bg-black/40 border text-white placeholder-slate-500 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-transparent transition-all ${
-                errorMsg ? "border-red-400/50 bg-red-950/20" : "border-white/10"
+              className={`w-full pl-10 pr-4 py-2.5 text-sm bg-slate-50 border text-slate-800 placeholder-slate-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:bg-white transition-all ${
+                errorMsg ? "border-red-400/50 bg-red-50/50" : "border-slate-200"
               }`}
               disabled={isLoading}
             />
           </div>
           {errorMsg && (
-            <p className="text-[11px] text-red-400 mt-1 font-medium">{errorMsg}</p>
+            <p className="text-[11px] text-red-600 mt-1 font-medium">{errorMsg}</p>
           )}
         </div>
 
@@ -118,15 +104,15 @@ export default function WorkPane({
             id="scan-url-btn"
             type="submit"
             disabled={isLoading}
-            className={`w-full py-3 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
+            className={`w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${
               isLoading
-                ? "bg-white/5 text-slate-500 cursor-not-allowed border border-white/10"
-                : "bg-gradient-to-r from-cyan-500 to-indigo-500 text-white hover:opacity-90 shadow-lg shadow-cyan-500/20 active:scale-[0.98]"
+                ? "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
+                : "bg-gradient-to-r from-purple-600 via-pink-500 to-blue-500 text-white hover:opacity-95 shadow-lg shadow-purple-500/20 active:scale-[0.98]"
             }`}
           >
             {isLoading ? (
               <>
-                <RotateCw className="w-4 h-4 animate-spin text-cyan-400" />
+                <RotateCw className="w-4 h-4 animate-spin text-indigo-600" />
                 <span>Processing Boost...</span>
               </>
             ) : (
@@ -141,9 +127,9 @@ export default function WorkPane({
 
       {/* Loading Steps Visualization */}
       {isLoading && (
-        <div className="p-4 bg-indigo-950/40 rounded-2xl border border-indigo-500/20 space-y-3 shadow-inner">
-          <h4 className="text-xs font-bold text-cyan-300 font-display flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 animate-pulse text-cyan-400" />
+        <div className="p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100 space-y-3 shadow-inner">
+          <h4 className="text-xs font-bold text-indigo-950 font-display flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 animate-pulse text-indigo-600" />
             <span>Orchestrating Generative Pipeline</span>
           </h4>
           <div className="space-y-2">
@@ -161,19 +147,19 @@ export default function WorkPane({
                 <div key={step.key} className="flex items-center gap-2.5">
                   <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold border ${
                     isDone 
-                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
                       : isActive 
-                        ? "bg-cyan-500 text-white border-cyan-400 animate-pulse shadow-md shadow-cyan-500/30" 
-                        : "bg-white/5 text-slate-500 border-white/5"
+                        ? "bg-indigo-600 text-white border-indigo-500 animate-pulse shadow-md shadow-indigo-500/20" 
+                        : "bg-slate-100 text-slate-400 border-slate-200"
                   }`}>
                     {isDone ? "✓" : idx + 1}
                   </div>
                   <span className={`text-xs ${
                     isActive 
-                      ? "text-cyan-200 font-semibold" 
+                      ? "text-indigo-950 font-bold" 
                       : isDone 
-                        ? "text-slate-400" 
-                        : "text-slate-600"
+                        ? "text-slate-500" 
+                        : "text-slate-400"
                   }`}>
                     {step.label}
                   </span>
@@ -184,161 +170,66 @@ export default function WorkPane({
         </div>
       )}
 
-      {/* Parameter Sliders & Settings */}
-      <div className="border-t border-white/5 pt-5 space-y-4">
-        <div className="flex items-center gap-1.5">
-          <Sliders className="w-4 h-4 text-slate-400" />
-          <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider font-display">Generation parameters</h3>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          
-          {/* Model Selector */}
-          <div>
-            <label className="block text-[11px] font-medium text-slate-400 mb-1">Image Model</label>
-            <select
-              id="model-select"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              className="w-full text-xs bg-black/40 border border-white/10 text-slate-200 rounded-xl px-2 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 [&_option]:bg-slate-900 [&_option]:text-white"
-              disabled={isLoading}
-            >
-              <option value="gemini-2.5-flash-image">Gemini 2.5 Flash Image</option>
-              <option value="gemini-3.1-flash-image">Gemini 3.1 Flash (High Q)</option>
-              <option value="imagen-4.0-generate-001">Imagen 4.0 Pro</option>
-            </select>
-          </div>
-
-          {/* Aspect Ratio Selector */}
-          <div>
-            <label className="block text-[11px] font-medium text-slate-400 mb-1">Aspect Ratio</label>
-            <select
-              id="aspect-ratio-select"
-              value={aspectRatio}
-              onChange={(e) => setAspectRatio(e.target.value)}
-              className="w-full text-xs bg-black/40 border border-white/10 text-slate-200 rounded-xl px-2 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 [&_option]:bg-slate-900 [&_option]:text-white"
-              disabled={isLoading}
-            >
-              <option value="1:1">1:1 (Square - Feed)</option>
-              <option value="9:16">9:16 (Portrait - Stories)</option>
-              <option value="16:9">16:9 (Landscape - Video)</option>
-              <option value="4:3">4:3 (Traditional Tablet)</option>
-              <option value="3:4">3:4 (Vertical Poster)</option>
-            </select>
-          </div>
-
-          {/* Resolution Selector */}
-          <div>
-            <label className="block text-[11px] font-medium text-slate-400 mb-1">Resolution / Size</label>
-            <select
-              id="resolution-select"
-              value={resolution}
-              onChange={(e) => setResolution(e.target.value)}
-              className="w-full text-xs bg-black/40 border border-white/10 text-slate-200 rounded-xl px-2 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 [&_option]:bg-slate-900 [&_option]:text-white"
-              disabled={isLoading}
-            >
-              <option value="512px">512px (Fast draft)</option>
-              <option value="1K">1K (Standard High-Res)</option>
-              <option value="2K">2K (Full HD)</option>
-              <option value="4K">4K (Ultra HD)</option>
-            </select>
-          </div>
-
-        </div>
-      </div>
-
-      {/* Generated Outputs Summary/Editor (Show only if scannedTitle or scannedDescription has content) */}
+      {/* Refine Copy and Metadata */}
       {(scannedTitle || scannedDescription) && !isLoading && (
-        <div className="border-t border-white/5 pt-5 space-y-4">
+        <div className="border-t border-slate-200 pt-5 space-y-5">
           <div className="flex items-center justify-between">
-            <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider font-display">Refine Copy & Prompt</h3>
-            <span className="text-[10px] bg-cyan-400/10 text-cyan-400 border border-cyan-400/20 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Ready to Share</span>
+            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider font-display">Refine Scanned Metadata</h3>
+            <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Ready to Share</span>
           </div>
 
-          {/* Editable Title */}
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-400 mb-1">Article Title</label>
+          {/* Article Title - Moved up before description */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider font-display">
+              Article Title
+            </label>
             <input
               id="scanned-title-input"
               type="text"
               value={scannedTitle}
               onChange={(e) => onUpdateScannedFields({ title: e.target.value })}
-              className="w-full px-3 py-1.5 bg-black/30 border border-white/10 text-white rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+              placeholder="Article title will appear here after scanning..."
+              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:bg-white"
+              disabled={isLoading}
             />
           </div>
 
-          {/* Social Caption Textbox */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-[11px] font-semibold text-slate-400">Social Media Caption</label>
-              <button
-                type="button"
-                onClick={() => copyToClipboard(scannedDescription, "desc")}
-                className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition-all"
-              >
-                {copiedDesc ? (
-                  <>
-                    <Check className="w-3 h-3 text-emerald-400" />
-                    <span className="text-emerald-400 font-semibold">Copied!</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3 h-3" />
-                    <span>Copy Post Text</span>
-                  </>
-                )}
-              </button>
+          {/* Article Description & Summary - Moved below title */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider font-display">
+                Article Description & Summary
+              </label>
+              {scannedDescription && (
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(scannedDescription, "desc")}
+                  className="text-[11px] text-indigo-600 hover:text-indigo-800 flex items-center gap-1 transition-all font-semibold"
+                >
+                  {copiedDesc ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="text-emerald-600 font-bold">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy Caption</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
             <textarea
               id="scanned-desc-textarea"
               value={scannedDescription}
               onChange={(e) => onUpdateScannedFields({ description: e.target.value })}
-              rows={4}
-              className="w-full px-3 py-2 bg-black/30 border border-white/10 text-white rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500/50 leading-relaxed"
-            ></textarea>
+              placeholder="Generated 2-paragraph summary, 'More Info: url', and hashtags will appear here after scanning..."
+              rows={10}
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:bg-white leading-relaxed font-sans shadow-inner"
+              disabled={isLoading}
+            />
           </div>
-
-          {/* Image Generation Prompt Box */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-[11px] font-semibold text-slate-400 flex items-center gap-1">
-                <Image className="w-3.5 h-3.5 text-slate-500" />
-                <span>Custom Image Prompt</span>
-              </label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => copyToClipboard(scannedPrompt, "prompt")}
-                  className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition-all"
-                >
-                  {copiedPrompt ? (
-                    <Check className="w-3 h-3 text-emerald-400" />
-                  ) : (
-                    <Copy className="w-3 h-3" />
-                  )}
-                  <span>Copy Prompt</span>
-                </button>
-              </div>
-            </div>
-            <textarea
-              id="scanned-prompt-textarea"
-              value={scannedPrompt}
-              onChange={(e) => onUpdateScannedFields({ prompt: e.target.value })}
-              rows={3}
-              className="w-full px-3 py-1.5 bg-black/40 border border-white/10 text-slate-300 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
-            ></textarea>
-
-            <button
-              id="regenerate-image-btn"
-              type="button"
-              onClick={handleRegenerate}
-              className="mt-2 w-full py-2.5 bg-white/5 hover:bg-white/10 text-slate-200 text-xs font-semibold rounded-xl border border-white/10 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 shadow-md shadow-black/10"
-            >
-              <RotateCw className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Regenerate Image with Revised Prompt</span>
-            </button>
-          </div>
-
         </div>
       )}
 
