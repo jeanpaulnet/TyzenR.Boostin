@@ -4,11 +4,25 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { BlobServiceClient } from "@azure/storage-blob";
+import OpenAI from "openai";
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
+
+// Lazy initialize OpenAI client
+let openaiClient: OpenAI | null = null;
+function getOpenAIClient() {
+  if (!openaiClient) {
+    const key = process.env.OPENAI_API_KEY;
+    if (!key) {
+      throw new Error("OPENAI_API_KEY environment variable is not configured. Please configure it in your Secrets or .env file.");
+    }
+    openaiClient = new OpenAI({ apiKey: key });
+  }
+  return openaiClient;
+}
 
 // Increase body parser limits for handling larger payloads/images
 app.use(express.json({ limit: "20mb" }));
@@ -99,6 +113,14 @@ app.post("/api/scan", async (req, res) => {
 
   // Prepare Gemini instructions to generate Title, Description (summary with Url & Tags) ready for social media
   try {
+    const template = promptTemplate || "create an ultra-realistic cinematic magazine like detailed picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle '{settings.business.name}' on bottom with watermark '{settings.watermark}' below it.";
+    const compiledPromptInstruction = template
+      .replace(/{url}/g, url || "")
+      .replace(/{settings\.business\.name}/g, bizName || "Your Biz")
+      .replace(/{settings\.watermark}/g, watermark || "Watermark")
+      .replace(/{company\.name}/g, bizName || "Your Biz")
+      .replace(/{watermark}/g, watermark || "Watermark");
+
     const prompt = `You are a social media copywriter and marketer.
 We are scanning a URL to generate a high-converting promotional post for social media platforms.
 
@@ -117,10 +139,14 @@ Please analyze the URL and the content, and generate the following three outputs
    
    More Info: ${url}
    
-   #tag1 #tag2 #tag3 (3-5 relevant trending hashtags/tags with #).
+   [Hashtags/Tags] (You MUST generate 4-6 highly relevant hashtags separated by spaces. The hashtags MUST include:
+   - A hashtag for the business/company name (use "#${(bizName || "YourBiz").replace(/\s+/g, "")}" or a hashtag representing the company name/brand discussed in the scanned content)
+   - A hashtag for the industry/sector of the content (e.g. #Tech, #Healthcare, #RealEstate, #Fintech, #ECommerce, etc., inferred from the content)
+   - A hashtag for the country or region associated with the article or company, or target market if applicable (e.g. #USA, #UK, #India, #Canada, #Global, etc., inferred from the content)
+   - 1-2 other trending, highly relevant, contextual keywords or hashtags)
 3. "imagePrompt": An optimized, highly descriptive visual prompt for generating a picture that summarizes the content of the article.
    Follow this exact instruction format:
-   "create an ultra-realistic cinematic magazine like detailed picture with vivid colors summarizing content of ${url}. Create title from article on top. Create subtitle from ${bizName || "Your Biz"} bottom with ${watermark || "Watermark"} below it."
+   "${compiledPromptInstruction}"
    (You can add visual descriptions of the scene to summarize the content, but keep that exact frame instruction intact!)
 
 Your output must be in valid JSON conforming to this schema:
@@ -154,14 +180,21 @@ Do not include any other text besides the JSON.`;
       success: true,
       title: parsedData.title || fetchedTitle || "Amazing Discoveries",
       description: parsedData.description || `Check this out! Summarizing content from ${url} #boostin #viral`,
-      imagePrompt: parsedData.imagePrompt || `create an ultra-realistic cinematic magazine like detailed picture with vivid colors summarizing content of ${url}. Create title from article on top. Create subtitle from ${bizName} bottom with ${watermark} below it.`,
+      imagePrompt: parsedData.imagePrompt || compiledPromptInstruction,
     });
   } catch (error: any) {
     console.error("Gemini Scan Error:", error);
     // Graceful fallback
     const fallbackTitle = fetchedTitle || "Article from " + new URL(url).hostname;
     const fallbackDesc = `Check this out: ${fallbackTitle}\n\nRead more here: ${url}\n\n#trending #boostin`;
-    const fallbackPrompt = `create an ultra-realistic cinematic magazine like detailed picture with vivid colors summarizing content of ${url}. Create title from article on top. Create subtitle from ${bizName} bottom with ${watermark} below it.`;
+    const fallbackPrompt = promptTemplate 
+      ? promptTemplate
+          .replace(/{url}/g, url || "")
+          .replace(/{settings\.business\.name}/g, bizName || "Your Biz")
+          .replace(/{settings\.watermark}/g, watermark || "Watermark")
+          .replace(/{company\.name}/g, bizName || "Your Biz")
+          .replace(/{watermark}/g, watermark || "Watermark")
+      : `create an ultra-realistic cinematic magazine like detailed picture with vivid colors summarizing content of ${url}. Create title from article on top. Create subtitle from ${bizName} bottom with ${watermark} below it.`;
 
     return res.json({
       success: true,
@@ -190,7 +223,47 @@ app.post("/api/generate-image", async (req, res) => {
   try {
     let base64ImageBytes = "";
 
-    if (selectedModel === "imagen-4.0-generate-001") {
+    if (selectedModel === "dall-e-3" || selectedModel === "dall-e-2") {
+      // Use OpenAI DALL-E models
+      const openai = getOpenAIClient();
+      const isDallE3 = selectedModel === "dall-e-3";
+      
+      let size: any = "1024x1024";
+      if (isDallE3) {
+        if (selectedAspect === "9:16") {
+          size = "1024x1792";
+        } else if (selectedAspect === "16:9") {
+          size = "1792x1024";
+        } else {
+          size = "1024x1024";
+        }
+      } else {
+        // DALL-E 2 only supports square sizes
+        if (selectedResolution === "512px") {
+          size = "512x512";
+        } else if (selectedResolution === "256px") {
+          size = "256x256";
+        } else {
+          size = "1024x1024";
+        }
+      }
+
+      console.log(`Calling OpenAI image generation with model: ${selectedModel}, size: ${size}`);
+      const openAIResponse = await openai.images.generate({
+        model: selectedModel,
+        prompt: prompt,
+        n: 1,
+        size: size,
+        response_format: "b64_json",
+      });
+
+      const b64 = openAIResponse.data[0]?.b64_json;
+      if (!b64) {
+        throw new Error(`No image data returned from OpenAI Image Generation with model ${selectedModel}.`);
+      }
+      base64ImageBytes = b64;
+
+    } else if (selectedModel === "imagen-4.0-generate-001") {
       // Use generateImages for Imagen model
       const imageResponse = await ai.models.generateImages({
         model: "imagen-4.0-generate-001",

@@ -5,6 +5,7 @@ import { ScannedItem } from "../types";
 interface PreviewPaneProps {
   activeItem: ScannedItem | null;
   isLoading: boolean;
+  isScanning?: boolean;
   model: string;
   setModel: (val: string) => void;
   aspectRatio: string;
@@ -19,6 +20,7 @@ interface PreviewPaneProps {
 export default function PreviewPane({
   activeItem,
   isLoading,
+  isScanning = false,
   model,
   setModel,
   aspectRatio,
@@ -117,10 +119,10 @@ export default function PreviewPane({
           <button
             id="gen-visual-btn"
             type="button"
-            disabled={isLoading || !scannedPrompt}
+            disabled={isLoading || isScanning || !scannedPrompt}
             onClick={handleGenClick}
             className={`px-5 py-2.5 bg-gradient-to-r from-purple-600 via-pink-500 to-blue-500 hover:opacity-95 text-white text-xs font-bold rounded-xl shadow-lg shadow-purple-500/10 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 ${
-              isLoading || !scannedPrompt ? "opacity-50 cursor-not-allowed" : ""
+              isLoading || isScanning || !scannedPrompt ? "opacity-50 cursor-not-allowed" : ""
             }`}
             title="Generate or update visual asset"
           >
@@ -271,7 +273,7 @@ export default function PreviewPane({
             placeholder="Image generation prompt goes here. Edit to refine the cinematic visual asset..."
             rows={3}
             className="w-full px-3 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500/50 leading-relaxed shadow-inner"
-            disabled={isLoading}
+            disabled={isLoading || isScanning}
           />
         </div>
       )}
@@ -292,11 +294,13 @@ export default function PreviewPane({
               value={model}
               onChange={(e) => setModel(e.target.value)}
               className="w-full text-[10px] bg-white border border-slate-200 text-slate-800 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 [&_option]:bg-white [&_option]:text-slate-800"
-              disabled={isLoading}
+              disabled={isLoading || isScanning}
             >
               <option value="gemini-2.5-flash-image">Gemini 2.5</option>
               <option value="gemini-3.1-flash-image">Gemini 3.1</option>
               <option value="imagen-4.0-generate-001">Imagen 4.0</option>
+              <option value="dall-e-3">DALL-E 3 (OpenAI)</option>
+              <option value="dall-e-2">DALL-E 2 (OpenAI)</option>
             </select>
           </div>
 
@@ -308,7 +312,7 @@ export default function PreviewPane({
               value={aspectRatio}
               onChange={(e) => setAspectRatio(e.target.value)}
               className="w-full text-[10px] bg-white border border-slate-200 text-slate-800 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 [&_option]:bg-white [&_option]:text-slate-800"
-              disabled={isLoading}
+              disabled={isLoading || isScanning}
             >
               <option value="1:1">1:1 Square</option>
               <option value="9:16">9:16 Portrait</option>
@@ -326,7 +330,7 @@ export default function PreviewPane({
               value={resolution}
               onChange={(e) => setResolution(e.target.value)}
               className="w-full text-[10px] bg-white border border-slate-200 text-slate-800 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 [&_option]:bg-white [&_option]:text-slate-800"
-              disabled={isLoading}
+              disabled={isLoading || isScanning}
             >
               <option value="512px">512px</option>
               <option value="1K">1K Std</option>

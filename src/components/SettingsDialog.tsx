@@ -47,7 +47,7 @@ export default function SettingsDialog({
     setBizName("Your Biz");
     setWebsite("www.yourbiz.org");
     setWatermark("Watermark");
-    setPromptTemplate("create an ultra-realistic cinematic magazine like detailed picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle from {company.name} bottom with {watermark} below it.");
+    setPromptTemplate("create an ultra-realistic cinematic magazine like detailed picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle '{settings.business.name}' on bottom with watermark '{settings.watermark}' below it.");
     setAzureConnectionString("");
     setAzureContainerName("boostin-social");
   };
@@ -144,8 +144,8 @@ export default function SettingsDialog({
                 <p className="font-semibold text-indigo-950">Supported Template Placeholders:</p>
                 <ul className="list-disc pl-4 space-y-0.5 text-slate-600">
                   <li><code className="bg-white px-1 py-0.5 rounded border border-slate-200 text-indigo-600 font-bold">{"{url}"}</code>: The article URL specified in the Work pane</li>
-                  <li><code className="bg-white px-1 py-0.5 rounded border border-slate-200 text-indigo-600 font-bold">{"{company.name}"}</code>: Business Name + Website</li>
-                  <li><code className="bg-white px-1 py-0.5 rounded border border-slate-200 text-indigo-600 font-bold">{"{watermark}"}</code>: Watermark string defined above</li>
+                  <li><code className="bg-white px-1 py-0.5 rounded border border-slate-200 text-indigo-600 font-bold">{"{settings.business.name}"}</code>: Business Name</li>
+                  <li><code className="bg-white px-1 py-0.5 rounded border border-slate-200 text-indigo-600 font-bold">{"{settings.watermark}"}</code>: Watermark string defined above</li>
                 </ul>
               </div>
             )}

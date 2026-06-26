@@ -10,7 +10,7 @@ const DEFAULT_SETTINGS: Settings = {
   bizName: "Your Biz",
   website: "www.yourbiz.org",
   watermark: "Watermark",
-  promptTemplate: "create an ultra-realistic cinematic magazine like detailed picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle from {company.name} bottom with {watermark} below it.",
+  promptTemplate: "create an ultra-realistic cinematic magazine like detailed picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle '{settings.business.name}' on bottom with watermark '{settings.watermark}' below it.",
   azureConnectionString: "",
   azureContainerName: "boostin-social",
 };
@@ -30,12 +30,13 @@ export default function App() {
   const [scannedPrompt, setScannedPrompt] = useState("");
 
   // Model & Parameter States (Shared between components)
-  const [model, setModel] = useState("gemini-2.5-flash-image");
+  const [model, setModel] = useState("dall-e-3");
   const [aspectRatio, setAspectRatio] = useState("1:1");
   const [resolution, setResolution] = useState("1K");
 
   // Loading Pipeline States
   const [isLoading, setIsLoading] = useState(false);
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [loadingStep, setLoadingStep] = useState<"scrape" | "copy" | "image" | "azure">("scrape");
 
   // Load persistence from LocalStorage
@@ -50,7 +51,7 @@ export default function App() {
           setScannedTitle(parsed[0].title);
           setScannedDescription(parsed[0].description);
           setScannedPrompt(parsed[0].imagePrompt);
-          setModel(parsed[0].model || "gemini-2.5-flash-image");
+          setModel(parsed[0].model || "dall-e-3");
           setAspectRatio(parsed[0].aspectRatio || "1:1");
           setResolution(parsed[0].resolution || "1K");
         }
@@ -87,7 +88,7 @@ export default function App() {
     setScannedTitle(item.title);
     setScannedDescription(item.description);
     setScannedPrompt(item.imagePrompt);
-    setModel(item.model || "gemini-2.5-flash-image");
+    setModel(item.model || "dall-e-3");
     setAspectRatio(item.aspectRatio || "1:1");
     setResolution(item.resolution || "1K");
   };
@@ -158,6 +159,7 @@ export default function App() {
           bizName: settings.bizName,
           website: settings.website,
           watermark: settings.watermark,
+          promptTemplate: settings.promptTemplate,
         }),
       });
 
@@ -175,26 +177,61 @@ export default function App() {
       setScannedDescription(scanData.description);
       setScannedPrompt(scanData.imagePrompt);
 
-      // We do NOT generate the image on scan click anymore.
-      // We directly save the item as "Not Generated".
-      const newItem: ScannedItem = {
-        id: `boost_${Date.now()}`,
-        url,
-        title: scanData.title,
-        description: scanData.description,
-        imagePrompt: scanData.imagePrompt,
-        imageUrl: "", // empty because not generated yet
-        azureUrl: "", // empty because not generated yet
-        azureStatus: "Not Generated",
-        model,
-        aspectRatio,
-        resolution,
-        timestamp: Date.now(),
+      // Check if URL already exists in history to satisfy: "HISTORY should be created only if URL changed."
+      const cleanUrl = (u: string) => {
+        try {
+          const parsed = new URL(u);
+          return (parsed.origin + parsed.pathname.replace(/\/$/, "") + parsed.search).toLowerCase();
+        } catch (_) {
+          return u.trim().toLowerCase();
+        }
       };
 
-      const updated = [newItem, ...items];
+      const targetClean = cleanUrl(url);
+      const existingItemIndex = items.findIndex((item) => cleanUrl(item.url) === targetClean);
+
+      let updated: ScannedItem[] = [];
+      let targetId = "";
+
+      if (existingItemIndex > -1) {
+        // Update the existing item
+        const existingItem = items[existingItemIndex];
+        const updatedItem: ScannedItem = {
+          ...existingItem,
+          title: scanData.title,
+          description: scanData.description,
+          imagePrompt: scanData.imagePrompt,
+          model,
+          aspectRatio,
+          resolution,
+          timestamp: Date.now(),
+        };
+        // Remove from current position and prepend to the top
+        const filtered = items.filter((_, idx) => idx !== existingItemIndex);
+        updated = [updatedItem, ...filtered];
+        targetId = existingItem.id;
+      } else {
+        // Create new item
+        const newItem: ScannedItem = {
+          id: `boost_${Date.now()}`,
+          url,
+          title: scanData.title,
+          description: scanData.description,
+          imagePrompt: scanData.imagePrompt,
+          imageUrl: "", // empty because not generated yet
+          azureUrl: "", // empty because not generated yet
+          azureStatus: "Not Generated",
+          model,
+          aspectRatio,
+          resolution,
+          timestamp: Date.now(),
+        };
+        updated = [newItem, ...items];
+        targetId = newItem.id;
+      }
+
       saveItems(updated);
-      setSelectedId(newItem.id);
+      setSelectedId(targetId);
 
     } catch (err: any) {
       console.error(err);
@@ -207,7 +244,7 @@ export default function App() {
   // Re-run Image Generation only (if they modified the custom prompt or settings)
   const handleRegenerateImage = async (prompt: string, model: string, aspectRatio: string, resolution: string) => {
     if (!selectedId) return;
-    setIsLoading(true);
+    setIsGeneratingImage(true);
     setLoadingStep("image");
 
     try {
@@ -263,7 +300,7 @@ export default function App() {
       console.error(err);
       alert(err.message || "Failed to regenerate image assets.");
     } finally {
-      setIsLoading(false);
+      setIsGeneratingImage(false);
     }
   };
 
@@ -350,7 +387,8 @@ export default function App() {
           <div className="lg:col-span-4 flex flex-col h-[calc(100vh-220px)] lg:h-[720px]">
             <PreviewPane
               activeItem={getActiveItem()}
-              isLoading={isLoading}
+              isLoading={isGeneratingImage}
+              isScanning={isLoading}
               model={model}
               setModel={setModel}
               aspectRatio={aspectRatio}

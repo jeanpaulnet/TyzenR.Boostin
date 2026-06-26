@@ -151,7 +151,7 @@ export default function LibraryPane({
                     e.stopPropagation();
                     onDeleteItem(item.id);
                   }}
-                  className="absolute right-2 top-2 p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute right-2 top-2 p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg opacity-60 hover:opacity-100 transition-all"
                   title="Remove from Gallery"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
