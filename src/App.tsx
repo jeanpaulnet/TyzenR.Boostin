@@ -10,7 +10,7 @@ const DEFAULT_SETTINGS: Settings = {
   bizName: "Your Biz",
   website: "www.yourbiz.org",
   watermark: "Watermark",
-  promptTemplate: "create an ultra-realistic corporate financial like detailed picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle '{settings.business.name}' on bottom with watermark '{settings.watermark}' below it.",
+  promptTemplate: "create an ultra-realistic corporate financial like detailed picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle '{settings.business.name}' on bottom with watermark '{settings.watermark}' below it. ",
   commonTags: "#trending #news",
 };
 
@@ -45,11 +45,16 @@ export default function App() {
       const savedItems = localStorage.getItem("boostin_items");
       if (savedItems) {
         const parsed = JSON.parse(savedItems);
-        setItems(parsed);
-        if (parsed.length > 0) {
-          setSelectedId(parsed[0].id);
-          setScannedTitle(parsed[0].title);
-          setScannedDescription(parsed[0].description);
+        // Clean loaded descriptions
+        const cleanedItems = parsed.map((item: any) => ({
+          ...item,
+          description: item.description ? item.description.replace(/\\n/g, "\n").replace(/\r\n/g, "\n").replace(/\n\n+/g, "\n\n").trim() : ""
+        }));
+        setItems(cleanedItems);
+        if (cleanedItems.length > 0) {
+          setSelectedId(cleanedItems[0].id);
+          setScannedTitle(cleanedItems[0].title);
+          setScannedDescription(cleanedItems[0].description);
           setScannedPrompt(parsed[0].imagePrompt);
           setModel(parsed[0].model || "");
           setAspectRatio("1:1");
@@ -82,11 +87,20 @@ export default function App() {
     localStorage.setItem("boostin_settings", JSON.stringify(newSettings));
   };
 
+  const cleanDescription = (desc: string): string => {
+    if (!desc) return "";
+    return desc
+      .replace(/\\n/g, "\n")
+      .replace(/\r\n/g, "\n")
+      .replace(/\n\n+/g, "\n\n")
+      .trim();
+  };
+
   // Selecting an item from the library
   const handleSelectItem = (item: ScannedItem) => {
     setSelectedId(item.id);
     setScannedTitle(item.title);
-    setScannedDescription(item.description);
+    setScannedDescription(cleanDescription(item.description));
     setScannedPrompt(item.imagePrompt);
     setModel(item.model || "");
     setAspectRatio("1:1");
@@ -125,7 +139,7 @@ export default function App() {
   // Updating active fields
   const handleUpdateScannedFields = (fields: { title?: string; description?: string; prompt?: string; imageUrl?: string }) => {
     if (fields.title !== undefined) setScannedTitle(fields.title);
-    if (fields.description !== undefined) setScannedDescription(fields.description);
+    if (fields.description !== undefined) setScannedDescription(cleanDescription(fields.description));
     if (fields.prompt !== undefined) setScannedPrompt(fields.prompt);
 
     // If an item is currently selected, update its state in the persistent items list as well!
@@ -135,7 +149,7 @@ export default function App() {
           return {
             ...item,
             title: fields.title !== undefined ? fields.title : item.title,
-            description: fields.description !== undefined ? fields.description : item.description,
+            description: fields.description !== undefined ? cleanDescription(fields.description) : item.description,
             imagePrompt: fields.prompt !== undefined ? fields.prompt : item.imagePrompt,
             imageUrl: fields.imageUrl !== undefined ? fields.imageUrl : item.imageUrl,
           };
@@ -179,7 +193,7 @@ export default function App() {
 
       setLoadingStep("copy");
       setScannedTitle(scanData.title);
-      setScannedDescription(scanData.description);
+      setScannedDescription(cleanDescription(scanData.description));
       setScannedPrompt(scanData.imagePrompt);
 
       // Step 2: Auto-Generate Picture & Upload to Azure (BOOST)
@@ -252,7 +266,7 @@ export default function App() {
         const updatedItem: ScannedItem = {
           ...existingItem,
           title: scanData.title,
-          description: scanData.description,
+          description: cleanDescription(scanData.description),
           imagePrompt: scanData.imagePrompt,
           imageUrl: imageUrl || existingItem.imageUrl,
           azureUrl: azureUrl || existingItem.azureUrl,
@@ -273,7 +287,7 @@ export default function App() {
           id: `boost_${Date.now()}`,
           url,
           title: scanData.title,
-          description: scanData.description,
+          description: cleanDescription(scanData.description),
           imagePrompt: scanData.imagePrompt,
           imageUrl,
           azureUrl,

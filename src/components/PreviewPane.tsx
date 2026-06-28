@@ -193,10 +193,10 @@ export default function PreviewPane({
         <div className="flex items-center gap-2">
           <button
             id="fullscreen-action-btn"
-            disabled={!activeItem || !activeItem.imageUrl}
+            disabled={!activeItem || !activeItem.imageUrl || isLoading}
             onClick={() => setIsFullscreen(true)}
             className={`p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl border border-slate-200 transition-all flex items-center justify-center ${
-              !activeItem || !activeItem.imageUrl ? "opacity-40 cursor-not-allowed" : "hover:scale-105 active:scale-[0.98]"
+              !activeItem || !activeItem.imageUrl || isLoading ? "opacity-40 cursor-not-allowed pointer-events-none" : "hover:scale-105 active:scale-[0.98]"
             }`}
             title="Full Screen View"
           >
@@ -205,10 +205,10 @@ export default function PreviewPane({
 
           <button
             id="download-action-btn"
-            disabled={!activeItem || !activeItem.imageUrl}
+            disabled={!activeItem || !activeItem.imageUrl || isLoading}
             onClick={handleDownload}
             className={`p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl border border-slate-200 transition-all active:scale-[0.98] flex items-center justify-center ${
-              !activeItem || !activeItem.imageUrl ? "opacity-40 cursor-not-allowed" : "hover:scale-105"
+              !activeItem || !activeItem.imageUrl || isLoading ? "opacity-40 cursor-not-allowed pointer-events-none" : "hover:scale-105"
             }`}
             title="Download Visual"
           >
@@ -219,15 +219,17 @@ export default function PreviewPane({
 
           <button
             id="history-action-btn"
-            disabled={!activeItem}
+            disabled={!activeItem || isLoading}
             onClick={() => {
               setShowPastUrls((prev) => !prev);
             }}
-            className={`p-2.5 rounded-xl border transition-all active:scale-[0.98] flex items-center justify-center hover:scale-105 ${
-              showPastUrls
-                ? "bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600 shadow-md shadow-indigo-500/10"
-                : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200"
-            } ${!activeItem ? "opacity-40 cursor-not-allowed" : ""}`}
+            className={`p-2.5 rounded-xl border transition-all active:scale-[0.98] flex items-center justify-center ${
+              !activeItem || isLoading
+                ? "opacity-40 cursor-not-allowed pointer-events-none bg-slate-100 text-slate-400 border-slate-200"
+                : showPastUrls
+                  ? "bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600 shadow-md shadow-indigo-500/10 hover:scale-105"
+                  : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 hover:scale-105"
+            }`}
             title="View Picture History"
           >
             <History className="w-4 h-4" />
@@ -380,7 +382,11 @@ export default function PreviewPane({
             <div className="w-full flex flex-col items-center">
               
               {/* Styled Preview Frame */}
-              <div className={`relative overflow-hidden rounded-xl shadow-xl border border-slate-200 bg-slate-950 transition-all duration-300 ${getAspectRatioClass(aspectRatio)}`}>
+              <div 
+                className={`relative overflow-hidden rounded-xl shadow-xl border border-slate-200 bg-slate-950 transition-all duration-300 cursor-pointer hover:border-indigo-400 ${getAspectRatioClass(aspectRatio)}`}
+                onClick={() => setIsFullscreen(true)}
+                title="Click to view fullscreen"
+              >
                 <img
                   src={activeItem.imageUrl}
                   alt={activeItem.title}
@@ -389,15 +395,10 @@ export default function PreviewPane({
                 />
                 
                 {/* Floating controls on hover */}
-                <div className="absolute inset-0 bg-black/60 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <button
-                    id="fullscreen-btn"
-                    onClick={() => setIsFullscreen(true)}
-                    className="p-2 bg-white/90 hover:bg-white text-slate-800 rounded-lg shadow-lg hover:scale-105 transition-all border border-slate-200/50 flex items-center justify-center cursor-pointer active:scale-95"
-                    title="Full Screen View"
-                  >
-                    <Maximize2 className="w-4 h-4" />
-                  </button>
+                <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
+                  <div className="p-3 bg-white/95 text-slate-800 rounded-full shadow-lg hover:scale-110 transition-all border border-slate-200/50 flex items-center justify-center">
+                    <Maximize2 className="w-5 h-5 text-indigo-600" />
+                  </div>
                 </div>
               </div>
 

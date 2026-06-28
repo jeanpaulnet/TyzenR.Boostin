@@ -79,7 +79,7 @@ export default function WorkPane({
       {/* Main Scan Form */}
       <form onSubmit={handleScanSubmit} className="space-y-4">
         <div>
-          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 font-display">
+          <label className="inline-block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent uppercase tracking-wider mb-1.5 pb-0.5 pr-1 font-display">
             Destination URL to Scan
           </label>
           <div className="relative">
@@ -187,7 +187,7 @@ export default function WorkPane({
 
           {/* Article Title - Moved up before description */}
           <div className="space-y-1.5">
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider font-display">
+            <label className="inline-block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent uppercase tracking-wider font-display pb-0.5 pr-1">
               Article Title
             </label>
             <input
@@ -204,7 +204,7 @@ export default function WorkPane({
           {/* Article Description & Summary - Moved below title */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider font-display">
+              <label className="inline-block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent uppercase tracking-wider font-display pb-0.5 pr-1">
                 ARTICLE DESCRIPTION
               </label>
               {scannedDescription && (

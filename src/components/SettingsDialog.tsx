@@ -46,7 +46,7 @@ export default function SettingsDialog({
     setWebsite("www.yourbiz.org");
     setWatermark("Watermark");
     setCommonTags("#trending #news");
-    setPromptTemplate("create an ultra-realistic corporate financial like detailed picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle '{settings.business.name}' on bottom with watermark '{settings.watermark}' below it.");
+    setPromptTemplate("create an ultra-realistic corporate financial like detailed picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle '{settings.business.name}' on bottom with watermark '{settings.watermark}' below it. ");
   };
 
   return (
@@ -81,7 +81,7 @@ export default function SettingsDialog({
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent mb-1">Business Name</label>
+                <label className="inline-block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent pb-0.5 pr-1 mb-1">Business Name</label>
                 <input
                   id="setting-biz-name"
                   type="text"
@@ -93,7 +93,7 @@ export default function SettingsDialog({
               </div>
 
               <div>
-                <label className="block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent mb-1">Website URL</label>
+                <label className="inline-block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent pb-0.5 pr-1 mb-1">Website URL</label>
                 <input
                   id="setting-website"
                   type="text"
@@ -107,7 +107,7 @@ export default function SettingsDialog({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent mb-1">Watermark Text</label>
+                <label className="inline-block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent pb-0.5 pr-1 mb-1">Watermark Text</label>
                 <input
                   id="setting-watermark"
                   type="text"
@@ -120,7 +120,7 @@ export default function SettingsDialog({
               </div>
 
               <div>
-                <label className="block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent mb-1">Common Suffix</label>
+                <label className="inline-block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent pb-0.5 pr-1 mb-1">Common Suffix</label>
                 <textarea
                   id="setting-common-tags"
                   value={commonTags}
@@ -139,7 +139,7 @@ export default function SettingsDialog({
           {/* Prompt Template Panel */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent uppercase tracking-wider font-display">Picture Prompt Template</label>
+              <label className="inline-block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent uppercase tracking-wider font-display pb-0.5 pr-1">Picture Prompt Template</label>
               <button
                 type="button"
                 onClick={() => setShowHelp(!showHelp)}

@@ -178,8 +178,8 @@ Do not include any other text besides the JSON.`;
     const parsedData = JSON.parse(response.text || "{}");
     let finalDescription = parsedData.description || `Check this out! Summarizing content from ${url} #boostin #viral`;
     
-    // Normalize newlines and replace any consecutive newlines (double newlines) with a single newline
-    finalDescription = finalDescription.replace(/\r\n/g, "\n").replace(/\n\n+/g, "\n");
+    // Normalize newlines and replace any consecutive newlines (double newlines) with a double newline (one empty line)
+    finalDescription = finalDescription.replace(/\r\n/g, "\n").replace(/\n\n+/g, "\n\n");
 
     if (commonTags) {
       const tagsArray = commonTags.split(/\s+/).filter(Boolean);
@@ -264,6 +264,11 @@ app.post("/api/generate-image", async (req, res) => {
       .replace(/{watermark}/g, watermark || "Watermark")
       .replace(/{title}/g, title || "")
       .replace(/{description}/g, description || "");
+  }
+
+  // Enforce padding for any text/headings/subheadings to prevent clipping on generated canvas edges
+  if (replacedPrompt) {
+    replacedPrompt += ". Ensure all visual text elements, headings, subheadings, and watermark details have generous padding and are safely away from the outer edges of the canvas to prevent any clipping or cutting off at the margins.";
   }
 
   console.log(`[Tyzenr] Processing request. Replaced Prompt: "${replacedPrompt}"`);
