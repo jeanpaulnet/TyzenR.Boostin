@@ -11,6 +11,7 @@ export interface ScannedItem {
   aspectRatio: string;
   resolution: string;
   timestamp: number;
+  pastImageUrls?: string[];
 }
 
 export interface Settings {
@@ -18,6 +19,5 @@ export interface Settings {
   website: string;
   watermark: string;
   promptTemplate: string;
-  azureConnectionString: string;
-  azureContainerName: string;
+  commonTags: string;
 }

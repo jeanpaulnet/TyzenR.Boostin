@@ -3,7 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
-import { BlobServiceClient } from "@azure/storage-blob";
+import { BlobServiceClient, BlobSASPermissions } from "@azure/storage-blob";
 import OpenAI from "openai";
 
 dotenv.config();
@@ -49,7 +49,7 @@ const ai = new GoogleGenAI({
 
 // Endpoint to scan URL
 app.post("/api/scan", async (req, res) => {
-  const { url, bizName, website, watermark, promptTemplate } = req.body;
+  const { url, bizName, website, watermark, promptTemplate, commonTags } = req.body;
 
   if (!url) {
     return res.status(400).json({ success: false, error: "URL is required" });
@@ -113,7 +113,7 @@ app.post("/api/scan", async (req, res) => {
 
   // Prepare Gemini instructions to generate Title, Description (summary with Url & Tags) ready for social media
   try {
-    const template = promptTemplate || "create an ultra-realistic cinematic magazine like detailed picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle '{settings.business.name}' on bottom with watermark '{settings.watermark}' below it.";
+    const template = promptTemplate || "create an ultra-realistic corporate financial like detailed picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle '{settings.business.name}' on bottom with watermark '{settings.watermark}' below it.";
     const compiledPromptInstruction = template
       .replace(/{url}/g, url || "")
       .replace(/{settings\.business\.name}/g, bizName || "Your Biz")
@@ -139,11 +139,11 @@ Please analyze the URL and the content, and generate the following three outputs
    
    More Info: ${url}
    
-   [Hashtags/Tags] (You MUST generate 4-6 highly relevant hashtags separated by spaces. The hashtags MUST include:
-   - A hashtag for the business/company name (use "#${(bizName || "YourBiz").replace(/\s+/g, "")}" or a hashtag representing the company name/brand discussed in the scanned content)
+   [Hashtags/Tags] (You MUST generate 3-5 highly relevant hashtags separated by spaces. Do NOT include any hashtag representing the business name "${bizName || "YourBiz"}" or its variation in the generated hashtags. Instead, the hashtags MUST include:
    - A hashtag for the industry/sector of the content (e.g. #Tech, #Healthcare, #RealEstate, #Fintech, #ECommerce, etc., inferred from the content)
    - A hashtag for the country or region associated with the article or company, or target market if applicable (e.g. #USA, #UK, #India, #Canada, #Global, etc., inferred from the content)
-   - 1-2 other trending, highly relevant, contextual keywords or hashtags)
+   - 1-2 other trending, highly relevant, contextual keywords or hashtags
+   - These common hashtags from settings MUST also be included at the end: ${commonTags || "#trending #news"})
 3. "imagePrompt": An optimized, highly descriptive visual prompt for generating a picture that summarizes the content of the article.
    Follow this exact instruction format:
    "${compiledPromptInstruction}"
@@ -176,17 +176,44 @@ Do not include any other text besides the JSON.`;
     });
 
     const parsedData = JSON.parse(response.text || "{}");
+    let finalDescription = parsedData.description || `Check this out! Summarizing content from ${url} #boostin #viral`;
+    
+    // Normalize newlines and replace any consecutive newlines (double newlines) with a single newline
+    finalDescription = finalDescription.replace(/\r\n/g, "\n").replace(/\n\n+/g, "\n");
+
+    if (commonTags) {
+      const tagsArray = commonTags.split(/\s+/).filter(Boolean);
+      const missingTags = tagsArray.filter(tag => !finalDescription.toLowerCase().includes(tag.toLowerCase()));
+      if (missingTags.length > 0) {
+        finalDescription += " " + missingTags.join(" ");
+      }
+    }
+
+    // Convert all hashtags inside finalDescription to lowercase
+    finalDescription = finalDescription.replace(/#[a-zA-Z0-9_]+/g, (match) => match.toLowerCase());
+
     return res.json({
       success: true,
       title: parsedData.title || fetchedTitle || "Amazing Discoveries",
-      description: parsedData.description || `Check this out! Summarizing content from ${url} #boostin #viral`,
+      description: finalDescription,
       imagePrompt: parsedData.imagePrompt || compiledPromptInstruction,
     });
   } catch (error: any) {
     console.error("Gemini Scan Error:", error);
     // Graceful fallback
     const fallbackTitle = fetchedTitle || "Article from " + new URL(url).hostname;
-    const fallbackDesc = `Check this out: ${fallbackTitle}\n\nRead more here: ${url}\n\n#trending #boostin`;
+    let fallbackDesc = `Check this out: ${fallbackTitle}\nRead more here: ${url}\n#trending #boostin`;
+    if (commonTags) {
+      const tagsArray = commonTags.split(/\s+/).filter(Boolean);
+      const missingTags = tagsArray.filter(tag => !fallbackDesc.toLowerCase().includes(tag.toLowerCase()));
+      if (missingTags.length > 0) {
+        fallbackDesc += " " + missingTags.join(" ");
+      }
+    }
+
+    // Convert all hashtags inside fallbackDesc to lowercase
+    fallbackDesc = fallbackDesc.replace(/#[a-zA-Z0-9_]+/g, (match) => match.toLowerCase());
+
     const fallbackPrompt = promptTemplate 
       ? promptTemplate
           .replace(/{url}/g, url || "")
@@ -194,7 +221,7 @@ Do not include any other text besides the JSON.`;
           .replace(/{settings\.watermark}/g, watermark || "Watermark")
           .replace(/{company\.name}/g, bizName || "Your Biz")
           .replace(/{watermark}/g, watermark || "Watermark")
-      : `create an ultra-realistic cinematic magazine like detailed picture with vivid colors summarizing content of ${url}. Create title from article on top. Create subtitle from ${bizName} bottom with ${watermark} below it.`;
+      : `create an ultra-realistic corporate financial like detailed picture with vivid colors summarizing content of ${url}. Create title from article on top. Create subtitle from ${bizName} bottom with ${watermark} below it.`;
 
     return res.json({
       success: true,
@@ -208,164 +235,148 @@ Do not include any other text besides the JSON.`;
 
 // Endpoint to generate image
 app.post("/api/generate-image", async (req, res) => {
-  const { prompt, model, aspectRatio, resolution, azureConfig } = req.body;
+  const { 
+    prompt, 
+    model, 
+    aspectRatio, 
+    resolution, 
+    azureConfig,
+    promptTemplate,
+    bizName,
+    watermark,
+    url,
+    title,
+    description
+  } = req.body;
 
   if (!prompt) {
     return res.status(400).json({ success: false, error: "Prompt is required" });
   }
 
-  const selectedModel = model || "gemini-2.5-flash-image";
-  const selectedAspect = aspectRatio || "1:1";
-  const selectedResolution = resolution || "1K";
+  // Reconstruct prompt from settings with parameters replaced
+  let replacedPrompt = prompt;
+  if (promptTemplate) {
+    replacedPrompt = promptTemplate
+      .replace(/{url}/g, url || "")
+      .replace(/{settings\.business\.name}/g, bizName || "Your Biz")
+      .replace(/{settings\.watermark}/g, watermark || "Watermark")
+      .replace(/{company\.name}/g, bizName || "Your Biz")
+      .replace(/{watermark}/g, watermark || "Watermark")
+      .replace(/{title}/g, title || "")
+      .replace(/{description}/g, description || "");
+  }
 
-  console.log(`Generating image using model: ${selectedModel}, prompt: "${prompt}", aspect: ${selectedAspect}, resolution: ${selectedResolution}`);
+  console.log(`[Tyzenr] Processing request. Replaced Prompt: "${replacedPrompt}"`);
 
   try {
+    let retrievedUrl = "";
     let base64ImageBytes = "";
 
-    if (selectedModel === "dall-e-3" || selectedModel === "dall-e-2") {
-      // Use OpenAI DALL-E models
-      const openai = getOpenAIClient();
-      const isDallE3 = selectedModel === "dall-e-3";
-      
-      let size: any = "1024x1024";
-      if (isDallE3) {
-        if (selectedAspect === "9:16") {
-          size = "1024x1792";
-        } else if (selectedAspect === "16:9") {
-          size = "1792x1024";
-        } else {
-          size = "1024x1024";
-        }
-      } else {
-        // DALL-E 2 only supports square sizes
-        if (selectedResolution === "512px") {
-          size = "512x512";
-        } else if (selectedResolution === "256px") {
-          size = "256x256";
-        } else {
-          size = "1024x1024";
-        }
-      }
+    // Invoke the Tyzenr API as requested
+    console.log(`[Tyzenr] Invoking POST https://webapi.tyzenr.com/picture/create with aspect: ${aspectRatio || "1:1"}, res: ${resolution || "1K"}, model: ${model || null}, title: ${title || ""}, subtitle: ${bizName || ""}`);
+    
+    const tyzenrResponse = await fetch("https://webapi.tyzenr.com/picture/create", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        prompt: replacedPrompt,
+        aspectRatio: aspectRatio || "1:1",
+        resolution: resolution || "1K",
+        model: model || null,
+        title: title || "",
+        subtitle: bizName || ""
+      }),
+    });
 
-      console.log(`Calling OpenAI image generation with model: ${selectedModel}, size: ${size}`);
-      const openAIResponse = await openai.images.generate({
-        model: selectedModel,
-        prompt: prompt,
-        n: 1,
-        size: size,
-        response_format: "b64_json",
-      });
+    console.log(`[Tyzenr] API returned status: ${tyzenrResponse.status}`);
+    
+    if (!tyzenrResponse.ok) {
+      const errText = await tyzenrResponse.text().catch(() => "");
+      throw new Error(`Tyzenr API returned status ${tyzenrResponse.status}: ${errText}`);
+    }
 
-      const b64 = openAIResponse.data[0]?.b64_json;
-      if (!b64) {
-        throw new Error(`No image data returned from OpenAI Image Generation with model ${selectedModel}.`);
-      }
-      base64ImageBytes = b64;
-
-    } else if (selectedModel === "imagen-4.0-generate-001") {
-      // Use generateImages for Imagen model
-      const imageResponse = await ai.models.generateImages({
-        model: "imagen-4.0-generate-001",
-        prompt: prompt,
-        config: {
-          numberOfImages: 1,
-          outputMimeType: "image/jpeg",
-          aspectRatio: selectedAspect,
-        },
-      });
-
-      if (!imageResponse?.generatedImages?.[0]?.image?.imageBytes) {
-        throw new Error("No image was generated by Imagen.");
-      }
-      base64ImageBytes = imageResponse.generatedImages[0].image.imageBytes;
+    const contentType = tyzenrResponse.headers.get("content-type") || "";
+    if (contentType.includes("image")) {
+      // If it returned raw binary image bytes
+      const arrayBuffer = await tyzenrResponse.arrayBuffer();
+      base64ImageBytes = Buffer.from(arrayBuffer).toString("base64");
+      console.log("[Tyzenr] Successfully loaded binary image from API response!");
     } else {
-      // Use generateContent for gemini-2.5-flash-image or gemini-3.1-flash-image
-      const contentResponse = await ai.models.generateContent({
-        model: selectedModel,
-        contents: {
-          parts: [{ text: prompt }],
-        },
-        config: {
-          imageConfig: {
-            aspectRatio: selectedAspect,
-            imageSize: selectedResolution,
-          },
-        },
-      });
+      const text = await tyzenrResponse.text();
+      console.log("[Tyzenr] Response text:", text.slice(0, 800));
+      
+      const trimmedText = text.trim();
+      if (trimmedText.startsWith("http://") || trimmedText.startsWith("https://")) {
+        retrievedUrl = trimmedText;
+        console.log("[Tyzenr] Successfully captured raw URL response:", retrievedUrl);
+      } else {
+        try {
+          const data = JSON.parse(text);
+          const possibleUrl = data.url || data.imageUrl || data.blobUrl || data.sasUrl || data.sasBlobUrl || data.link || (data.data && (data.data.url || data.data.imageUrl || data.data.blobUrl || data.data.sasUrl));
+          const possibleBase64 = data.base64 || data.b64_json || data.imageBytes || (data.data && (data.data.base64 || data.data.b64_json));
 
-      // Find the inline data image part
-      const parts = contentResponse.candidates?.[0]?.content?.parts;
-      if (parts) {
-        for (const part of parts) {
-          if (part.inlineData && part.inlineData.data) {
-            base64ImageBytes = part.inlineData.data;
-            break;
+          if (possibleUrl && typeof possibleUrl === "string") {
+            retrievedUrl = possibleUrl;
+            console.log("[Tyzenr] Successfully captured URL from JSON key:", retrievedUrl);
+          } else if (possibleBase64) {
+            base64ImageBytes = possibleBase64.replace(/^data:image\/[a-z]+;base64,/, "");
+            console.log("[Tyzenr] Successfully captured base64 bytes from JSON.");
+          } else {
+            // Regex search for any http/https URL in the JSON string as fallback
+            const match = text.match(/https?:\/\/[^\s"']+/);
+            if (match) {
+              retrievedUrl = match[0];
+              console.log("[Tyzenr] Successfully matched URL pattern in JSON text:", retrievedUrl);
+            }
+          }
+        } catch (jsonErr) {
+          // Regex search in plain text
+          const match = text.match(/https?:\/\/[^\s"']+/);
+          if (match) {
+            retrievedUrl = match[0];
+            console.log("[Tyzenr] Successfully matched URL pattern in raw text response:", retrievedUrl);
           }
         }
       }
-
-      if (!base64ImageBytes) {
-        throw new Error(`No image returned in Gemini content parts for model ${selectedModel}.`);
-      }
     }
 
-    // Save image locally as cache/fallback
-    const filename = `boostin_${Date.now()}.png`;
-    const localPath = path.join(publicImagesDir, filename);
-    const buffer = Buffer.from(base64ImageBytes, "base64");
-    fs.writeFileSync(localPath, buffer);
-    const localUrl = `/images/${filename}`;
-
-    // Upload to Azure Blob Storage if configured
-    let azureUrl = "";
-    let azureStatus = "Not Configured";
-
-    if (azureConfig && azureConfig.connectionString && azureConfig.containerName) {
-      try {
-        console.log("Uploading to actual Azure Blob Storage container:", azureConfig.containerName);
-        const blobServiceClient = BlobServiceClient.fromConnectionString(azureConfig.connectionString);
-        const containerClient = blobServiceClient.getContainerClient(azureConfig.containerName);
-        
-        // Try to create the container if it doesn't exist
-        await containerClient.createIfNotExists({ access: "blob" });
-        
-        const blockBlobClient = containerClient.getBlockBlobClient(filename);
-        await blockBlobClient.upload(buffer, buffer.length, {
-          blobHTTPHeaders: { blobContentType: "image/png" }
-        });
-        
-        azureUrl = blockBlobClient.url;
-        azureStatus = "Success";
-        console.log("Azure Blob upload successful:", azureUrl);
-      } catch (azureErr: any) {
-        console.error("Azure Blob Upload failed:", azureErr);
-        azureStatus = `Failed: ${azureErr.message || azureErr}`;
-      }
+    // If we got a direct URL/SAS URL from the API, use it!
+    if (retrievedUrl) {
+      return res.json({
+        success: true,
+        imageUrl: retrievedUrl,
+        azureUrl: retrievedUrl,
+        azureStatus: "Success (Linked via Tyzenr API)",
+        base64: "", 
+      });
     }
 
-    // If actual Azure Blob failed or wasn't configured, build a clean simulated Azure Blob Storage URL for display purposes
-    if (!azureUrl) {
-      const sanitizedContainer = (azureConfig?.containerName || "boostin-social").toLowerCase().replace(/[^a-z0-9-]/g, "");
-      azureUrl = `https://boostinstorage.blob.core.windows.net/${sanitizedContainer}/${filename}`;
-      if (azureStatus === "Not Configured") {
-        azureStatus = "Simulated (Configure connection string in Settings to upload to your real Azure account)";
-      }
+    // If we got binary image bytes, save locally as cache fallback
+    if (base64ImageBytes) {
+      const filename = `boostin_${Date.now()}.png`;
+      const localPath = path.join(publicImagesDir, filename);
+      const buffer = Buffer.from(base64ImageBytes, "base64");
+      fs.writeFileSync(localPath, buffer);
+      const localUrl = `/images/${filename}`;
+
+      return res.json({
+        success: true,
+        imageUrl: localUrl,
+        azureUrl: localUrl,
+        azureStatus: "Success (Local Image Cached)",
+        base64: `data:image/png;base64,${base64ImageBytes}`,
+      });
     }
 
-    return res.json({
-      success: true,
-      imageUrl: localUrl, // Use local cached url for preview/download so it is always guaranteed to load
-      azureUrl: azureUrl, // Display the stored Azure Blob path to the user as requested
-      azureStatus: azureStatus,
-      base64: `data:image/png;base64,${base64ImageBytes}`,
-    });
+    throw new Error("Tyzenr API response did not contain a valid image URL or image bytes.");
 
   } catch (error: any) {
     console.error("Image generation error:", error);
     return res.status(500).json({
       success: false,
-      error: error.message || "Failed to generate image with Gemini API.",
+      error: error.message || "Failed to generate picture via Tyzenr API.",
     });
   }
 });

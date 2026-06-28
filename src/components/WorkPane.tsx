@@ -14,6 +14,7 @@ interface WorkPaneProps {
   model: string;
   aspectRatio: string;
   resolution: string;
+  activeItemUrl?: string;
 }
 
 export default function WorkPane({
@@ -28,11 +29,18 @@ export default function WorkPane({
   model,
   aspectRatio,
   resolution,
+  activeItemUrl = "",
 }: WorkPaneProps) {
   const [url, setUrl] = useState("");
   const [copiedDesc, setCopiedDesc] = useState(false);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+
+  React.useEffect(() => {
+    if (activeItemUrl) {
+      setUrl(activeItemUrl);
+    }
+  }, [activeItemUrl]);
 
   const handleScanSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -107,7 +115,7 @@ export default function WorkPane({
             className={`w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${
               isLoading
                 ? "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
-                : "bg-gradient-to-r from-purple-600 via-pink-500 to-blue-500 text-white hover:opacity-95 shadow-lg shadow-purple-500/20 active:scale-[0.98]"
+                : "bg-gradient-to-r from-[#a3e635] via-[#10b981] to-[#8b5cf6] border border-white/20 text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_4px_14px_rgba(163,230,53,0.2)] hover:brightness-105 active:scale-[0.98] font-bold tracking-wide"
             }`}
           >
             {isLoading ? (
@@ -118,7 +126,7 @@ export default function WorkPane({
             ) : (
               <>
                 <Sparkles className="w-4 h-4" />
-                <span>Scan URL & Generate Boost</span>
+                <span>SCAN & BOOST</span>
               </>
             )}
           </button>
@@ -136,8 +144,7 @@ export default function WorkPane({
             {[
               { key: "scrape", label: "Extracting metadata and text from target webpage" },
               { key: "copy", label: "Engaging Gemini to write click-worthy social copy" },
-              { key: "image", label: `Invoking selected AI model to generate visual asset` },
-              { key: "azure", label: `Uploading brand-ready file directly to Azure Storage` }
+              { key: "image", label: `Invoking selected AI model to generate visual asset` }
             ].map((step, idx) => {
               const activeIdx = ["scrape", "copy", "image", "azure"].indexOf(loadingStep);
               const isDone = idx < activeIdx;
@@ -198,7 +205,7 @@ export default function WorkPane({
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider font-display">
-                Article Description & Summary
+                ARTICLE DESCRIPTION
               </label>
               {scannedDescription && (
                 <button

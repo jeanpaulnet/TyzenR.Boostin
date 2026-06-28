@@ -18,9 +18,8 @@ export default function SettingsDialog({
   const [bizName, setBizName] = useState(settings.bizName);
   const [website, setWebsite] = useState(settings.website);
   const [watermark, setWatermark] = useState(settings.watermark);
+  const [commonTags, setCommonTags] = useState(settings.commonTags || "#trending #news");
   const [promptTemplate, setPromptTemplate] = useState(settings.promptTemplate);
-  const [azureConnectionString, setAzureConnectionString] = useState(settings.azureConnectionString);
-  const [azureContainerName, setAzureContainerName] = useState(settings.azureContainerName);
   const [isSaved, setIsSaved] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
 
@@ -33,8 +32,7 @@ export default function SettingsDialog({
       website,
       watermark,
       promptTemplate,
-      azureConnectionString,
-      azureContainerName,
+      commonTags: commonTags.toLowerCase(),
     });
     setIsSaved(true);
     setTimeout(() => {
@@ -47,14 +45,13 @@ export default function SettingsDialog({
     setBizName("Your Biz");
     setWebsite("www.yourbiz.org");
     setWatermark("Watermark");
-    setPromptTemplate("create an ultra-realistic cinematic magazine like detailed picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle '{settings.business.name}' on bottom with watermark '{settings.watermark}' below it.");
-    setAzureConnectionString("");
-    setAzureContainerName("boostin-social");
+    setCommonTags("#trending #news");
+    setPromptTemplate("create an ultra-realistic corporate financial like detailed picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle '{settings.business.name}' on bottom with watermark '{settings.watermark}' below it.");
   };
 
   return (
     <div id="settings-modal" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md transition-all duration-300">
-      <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
+      <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
         
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-slate-200/80 bg-slate-50/80">
@@ -63,7 +60,7 @@ export default function SettingsDialog({
               <Database className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-slate-900 font-display">Brand & Integrations</h2>
+              <h2 className="text-xl font-bold text-slate-900 font-display">Business Settings</h2>
               <p className="text-xs text-slate-500">Configure global metadata and image prompt templates</p>
             </div>
           </div>
@@ -80,12 +77,11 @@ export default function SettingsDialog({
         <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-6 space-y-6 text-slate-700">
           
           {/* Brand Panel */}
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wider font-display">Business & Watermark Settings</h3>
+          <div className="space-y-6">
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Business Name</label>
+                <label className="block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent mb-1">Business Name</label>
                 <input
                   id="setting-biz-name"
                   type="text"
@@ -97,7 +93,7 @@ export default function SettingsDialog({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Website URL</label>
+                <label className="block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent mb-1">Website URL</label>
                 <input
                   id="setting-website"
                   type="text"
@@ -109,17 +105,32 @@ export default function SettingsDialog({
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Watermark Text</label>
-              <input
-                id="setting-watermark"
-                type="text"
-                value={watermark}
-                onChange={(e) => setWatermark(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:bg-white transition-all"
-                required
-              />
-              <p className="text-[10px] text-slate-400 mt-1">Sits at the very bottom below your website URL subtitle</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent mb-1">Watermark Text</label>
+                <input
+                  id="setting-watermark"
+                  type="text"
+                  value={watermark}
+                  onChange={(e) => setWatermark(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:bg-white transition-all"
+                  required
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Sits at the very bottom below your website URL subtitle</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent mb-1">Common Suffix</label>
+                <textarea
+                  id="setting-common-tags"
+                  value={commonTags}
+                  onChange={(e) => setCommonTags(e.target.value.toLowerCase())}
+                  rows={2}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:bg-white transition-all resize-none"
+                  required
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Automatically appended to the generated social media post description</p>
+              </div>
             </div>
           </div>
 
@@ -128,7 +139,7 @@ export default function SettingsDialog({
           {/* Prompt Template Panel */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="block text-xs font-semibold text-slate-800 uppercase tracking-wider font-display">Image Prompt Template</label>
+              <label className="block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent uppercase tracking-wider font-display">Picture Prompt Template</label>
               <button
                 type="button"
                 onClick={() => setShowHelp(!showHelp)}
@@ -183,7 +194,7 @@ export default function SettingsDialog({
               id="save-settings-btn"
               onClick={handleSave}
               className={`px-5 py-2 text-sm font-bold rounded-xl text-white flex items-center gap-1.5 transition-all shadow-lg ${
-                isSaved ? "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/10" : "bg-gradient-to-r from-purple-600 via-pink-500 to-blue-500 hover:opacity-95 shadow-lg shadow-purple-500/20 active:scale-[0.98]"
+                isSaved ? "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/10" : "bg-gradient-to-r from-[#a3e635] via-[#10b981] to-[#8b5cf6] border border-white/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_4px_14px_rgba(163,230,53,0.15)] hover:brightness-105 active:scale-[0.98]"
               }`}
             >
               {isSaved ? (

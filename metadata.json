@@ -1,5 +1,5 @@
 {
-  "name": "Boostin",
+  "name": "Boostin AI",
   "description": "Boost your social media presence by scanning URLs to generate social sharing copy, titles, descriptions, and ultra-realistic cinematic visuals stored in Azure Blob Storage.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

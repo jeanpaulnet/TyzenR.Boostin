@@ -10,9 +10,8 @@ const DEFAULT_SETTINGS: Settings = {
   bizName: "Your Biz",
   website: "www.yourbiz.org",
   watermark: "Watermark",
-  promptTemplate: "create an ultra-realistic cinematic magazine like detailed picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle '{settings.business.name}' on bottom with watermark '{settings.watermark}' below it.",
-  azureConnectionString: "",
-  azureContainerName: "boostin-social",
+  promptTemplate: "create an ultra-realistic corporate financial like detailed picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle '{settings.business.name}' on bottom with watermark '{settings.watermark}' below it.",
+  commonTags: "#trending #news",
 };
 
 export default function App() {
@@ -30,7 +29,7 @@ export default function App() {
   const [scannedPrompt, setScannedPrompt] = useState("");
 
   // Model & Parameter States (Shared between components)
-  const [model, setModel] = useState("dall-e-3");
+  const [model, setModel] = useState("");
   const [aspectRatio, setAspectRatio] = useState("1:1");
   const [resolution, setResolution] = useState("1K");
 
@@ -38,6 +37,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [loadingStep, setLoadingStep] = useState<"scrape" | "copy" | "image" | "azure">("scrape");
+  const [imageError, setImageError] = useState<string | null>(null);
 
   // Load persistence from LocalStorage
   useEffect(() => {
@@ -51,9 +51,9 @@ export default function App() {
           setScannedTitle(parsed[0].title);
           setScannedDescription(parsed[0].description);
           setScannedPrompt(parsed[0].imagePrompt);
-          setModel(parsed[0].model || "dall-e-3");
-          setAspectRatio(parsed[0].aspectRatio || "1:1");
-          setResolution(parsed[0].resolution || "1K");
+          setModel(parsed[0].model || "");
+          setAspectRatio("1:1");
+          setResolution("1K");
         }
       }
     } catch (e) {
@@ -88,23 +88,25 @@ export default function App() {
     setScannedTitle(item.title);
     setScannedDescription(item.description);
     setScannedPrompt(item.imagePrompt);
-    setModel(item.model || "dall-e-3");
-    setAspectRatio(item.aspectRatio || "1:1");
-    setResolution(item.resolution || "1K");
+    setModel(item.model || "");
+    setAspectRatio("1:1");
+    setResolution("1K");
   };
 
   // Deleting an item
   const handleDeleteItem = (id: string) => {
-    const updated = items.filter((item) => item.id !== id);
-    saveItems(updated);
-    if (selectedId === id) {
-      if (updated.length > 0) {
-        handleSelectItem(updated[0]);
-      } else {
-        setSelectedId(null);
-        setScannedTitle("");
-        setScannedDescription("");
-        setScannedPrompt("");
+    if (window.confirm("Are you sure you want to delete this URL history item?")) {
+      const updated = items.filter((item) => item.id !== id);
+      saveItems(updated);
+      if (selectedId === id) {
+        if (updated.length > 0) {
+          handleSelectItem(updated[0]);
+        } else {
+          setSelectedId(null);
+          setScannedTitle("");
+          setScannedDescription("");
+          setScannedPrompt("");
+        }
       }
     }
   };
@@ -121,7 +123,7 @@ export default function App() {
   };
 
   // Updating active fields
-  const handleUpdateScannedFields = (fields: { title?: string; description?: string; prompt?: string }) => {
+  const handleUpdateScannedFields = (fields: { title?: string; description?: string; prompt?: string; imageUrl?: string }) => {
     if (fields.title !== undefined) setScannedTitle(fields.title);
     if (fields.description !== undefined) setScannedDescription(fields.description);
     if (fields.prompt !== undefined) setScannedPrompt(fields.prompt);
@@ -135,6 +137,7 @@ export default function App() {
             title: fields.title !== undefined ? fields.title : item.title,
             description: fields.description !== undefined ? fields.description : item.description,
             imagePrompt: fields.prompt !== undefined ? fields.prompt : item.imagePrompt,
+            imageUrl: fields.imageUrl !== undefined ? fields.imageUrl : item.imageUrl,
           };
         }
         return item;
@@ -147,6 +150,7 @@ export default function App() {
   const handleScan = async (url: string, model: string, aspectRatio: string, resolution: string) => {
     setIsLoading(true);
     setLoadingStep("scrape");
+    setImageError(null);
 
     try {
       // Step 1: Scrape & Copywrite via Gemini
@@ -160,6 +164,7 @@ export default function App() {
           website: settings.website,
           watermark: settings.watermark,
           promptTemplate: settings.promptTemplate,
+          commonTags: settings.commonTags,
         }),
       });
 
@@ -176,6 +181,46 @@ export default function App() {
       setScannedTitle(scanData.title);
       setScannedDescription(scanData.description);
       setScannedPrompt(scanData.imagePrompt);
+
+      // Step 2: Auto-Generate Picture & Upload to Azure (BOOST)
+      setLoadingStep("image");
+      const imageResponse = await fetch("/api/generate-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: scanData.imagePrompt,
+          model,
+          aspectRatio,
+          resolution,
+          promptTemplate: settings.promptTemplate,
+          bizName: settings.bizName,
+          watermark: settings.watermark,
+          url: url,
+          title: scanData.title,
+          description: scanData.description,
+        }),
+      });
+
+      let imageUrl = "";
+      let azureUrl = "";
+      let azureStatus = "Not Generated";
+
+      if (!imageResponse.ok) {
+        const errorData = await imageResponse.json().catch(() => ({}));
+        console.warn("Auto-boost image generation failed:", errorData.error);
+        setImageError(errorData.error || "Image generation pipeline failed");
+      } else {
+        setLoadingStep("azure");
+        const imageData = await imageResponse.json();
+        if (imageData.success) {
+          imageUrl = imageData.imageUrl;
+          azureUrl = imageData.azureUrl;
+          azureStatus = imageData.azureStatus;
+        } else {
+          console.warn("Auto-boost image generation failed:", imageData.error);
+          setImageError(imageData.error || "Image asset creation pipeline error");
+        }
+      }
 
       // Check if URL already exists in history to satisfy: "HISTORY should be created only if URL changed."
       const cleanUrl = (u: string) => {
@@ -196,15 +241,27 @@ export default function App() {
       if (existingItemIndex > -1) {
         // Update the existing item
         const existingItem = items[existingItemIndex];
+        const newPastImageUrls = [...(existingItem.pastImageUrls || [])];
+        if (existingItem.imageUrl && !newPastImageUrls.includes(existingItem.imageUrl)) {
+          newPastImageUrls.unshift(existingItem.imageUrl);
+        }
+        if (imageUrl && !newPastImageUrls.includes(imageUrl)) {
+          newPastImageUrls.push(imageUrl);
+        }
+
         const updatedItem: ScannedItem = {
           ...existingItem,
           title: scanData.title,
           description: scanData.description,
           imagePrompt: scanData.imagePrompt,
+          imageUrl: imageUrl || existingItem.imageUrl,
+          azureUrl: azureUrl || existingItem.azureUrl,
+          azureStatus: azureStatus !== "Not Generated" ? azureStatus : existingItem.azureStatus,
           model,
           aspectRatio,
           resolution,
           timestamp: Date.now(),
+          pastImageUrls: newPastImageUrls,
         };
         // Remove from current position and prepend to the top
         const filtered = items.filter((_, idx) => idx !== existingItemIndex);
@@ -218,13 +275,14 @@ export default function App() {
           title: scanData.title,
           description: scanData.description,
           imagePrompt: scanData.imagePrompt,
-          imageUrl: "", // empty because not generated yet
-          azureUrl: "", // empty because not generated yet
-          azureStatus: "Not Generated",
+          imageUrl,
+          azureUrl,
+          azureStatus,
           model,
           aspectRatio,
           resolution,
           timestamp: Date.now(),
+          pastImageUrls: imageUrl ? [imageUrl] : [],
         };
         updated = [newItem, ...items];
         targetId = newItem.id;
@@ -246,6 +304,7 @@ export default function App() {
     if (!selectedId) return;
     setIsGeneratingImage(true);
     setLoadingStep("image");
+    setImageError(null);
 
     try {
       const activeItem = items.find((item) => item.id === selectedId);
@@ -259,10 +318,12 @@ export default function App() {
           model,
           aspectRatio,
           resolution,
-          azureConfig: {
-            connectionString: settings.azureConnectionString,
-            containerName: settings.azureContainerName,
-          },
+          promptTemplate: settings.promptTemplate,
+          bizName: settings.bizName,
+          watermark: settings.watermark,
+          url: activeItem.url,
+          title: activeItem.title,
+          description: activeItem.description,
         }),
       });
 
@@ -280,6 +341,13 @@ export default function App() {
       // Update current selected item
       const updated = items.map((item) => {
         if (item.id === selectedId) {
+          const newPast = [...(item.pastImageUrls || [])];
+          if (item.imageUrl && !newPast.includes(item.imageUrl)) {
+            newPast.push(item.imageUrl);
+          }
+          if (imageData.imageUrl && !newPast.includes(imageData.imageUrl)) {
+            newPast.push(imageData.imageUrl);
+          }
           return {
             ...item,
             imagePrompt: prompt,
@@ -289,6 +357,7 @@ export default function App() {
             model,
             aspectRatio,
             resolution,
+            pastImageUrls: newPast,
           };
         }
         return item;
@@ -298,7 +367,7 @@ export default function App() {
 
     } catch (err: any) {
       console.error(err);
-      alert(err.message || "Failed to regenerate image assets.");
+      setImageError(err.message || "Failed to regenerate image assets.");
     } finally {
       setIsGeneratingImage(false);
     }
@@ -317,13 +386,13 @@ export default function App() {
         
         {/* Brand / Logo */}
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-gradient-to-tr from-purple-600 via-pink-500 to-blue-500 rounded-lg flex items-center justify-center shadow-lg shadow-purple-500/30">
+          <div className="w-9 h-9 bg-gradient-to-tr from-[#a3e635] via-[#10b981] to-[#8b5cf6] rounded-lg flex items-center justify-center shadow-lg shadow-[rgba(163,230,53,0.2)]">
             <Sparkles className="w-5 h-5 text-white" />
           </div>
           <div>
             <h1 className="text-xl font-black text-white tracking-tight font-display flex items-center gap-1.5 leading-none">
               <span>BOOSTIN</span>
-              <span className="bg-gradient-to-r from-purple-600 via-pink-500 to-blue-500 bg-clip-text text-transparent font-black tracking-wider">AI</span>
+              <span className="bg-gradient-to-r from-[#a3e635] via-[#10b981] to-[#8b5cf6] bg-clip-text text-transparent font-black tracking-wider">AI</span>
             </h1>
             <p className="text-[10px] text-slate-400 font-medium mt-0.5">Generate high-converting social creatives from raw URLs</p>
           </div>
@@ -343,7 +412,7 @@ export default function App() {
             className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-200 rounded-xl border border-white/10 text-xs font-semibold transition-all active:scale-[0.98] shadow-sm"
           >
             <SettingsIcon className="w-4 h-4 text-indigo-400" />
-            <span>Brand & Templates</span>
+            <span>Business Settings</span>
           </button>
         </div>
 
@@ -380,6 +449,7 @@ export default function App() {
               model={model}
               aspectRatio={aspectRatio}
               resolution={resolution}
+              activeItemUrl={getActiveItem()?.url || ""}
             />
           </div>
 
@@ -398,6 +468,9 @@ export default function App() {
               scannedPrompt={scannedPrompt}
               onRegenerateImage={handleRegenerateImage}
               onUpdateScannedFields={handleUpdateScannedFields}
+              settings={settings}
+              imageError={imageError}
+              setImageError={setImageError}
             />
           </div>
 
@@ -411,16 +484,13 @@ export default function App() {
           <span className="text-[9px] uppercase tracking-widest">
             Status: <span className="text-emerald-600 font-bold">Connected</span>
           </span>
-          <span className="text-[9px] uppercase tracking-widest">
-            Azure Storage: <span className="text-indigo-600 font-semibold">{settings.azureConnectionString ? "Armed" : "Simulated"}</span>
-          </span>
         </div>
         <div className="text-[9px] uppercase tracking-widest font-medium hidden sm:block">
-          Boostin Engine v2.0.4 - Cloud AI Accelerated
+          Boostin AI Engine v2.0.4 - Cloud AI Accelerated
         </div>
       </footer>
 
-      {/* Brand & Azure Integration Settings Overlay */}
+      {/* Brand Settings Overlay */}
       <SettingsDialog
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
