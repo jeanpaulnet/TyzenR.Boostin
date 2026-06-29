@@ -10,7 +10,7 @@ const DEFAULT_SETTINGS: Settings = {
   bizName: "Your Biz",
   website: "www.yourbiz.org",
   watermark: "Watermark",
-  promptTemplate: "create an ultra-realistic corporate financial like detailed picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle '{settings.business.name}' on bottom with watermark '{settings.watermark}' below it. ",
+  promptTemplate: "create an ultra-realistic corporate financial picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle '{settings.business.name}' on bottom with watermark '{settings.watermark}' below it. Ensure the texts do not cut-off margins.",
   commonTags: "#trending #news",
 };
 
@@ -137,7 +137,14 @@ export default function App() {
   };
 
   // Updating active fields
-  const handleUpdateScannedFields = (fields: { title?: string; description?: string; prompt?: string; imageUrl?: string }) => {
+  const handleUpdateScannedFields = (fields: { 
+    title?: string; 
+    description?: string; 
+    prompt?: string; 
+    imageUrl?: string;
+    imageUrl916?: string;
+    imageUrl169?: string;
+  }) => {
     if (fields.title !== undefined) setScannedTitle(fields.title);
     if (fields.description !== undefined) setScannedDescription(cleanDescription(fields.description));
     if (fields.prompt !== undefined) setScannedPrompt(fields.prompt);
@@ -152,6 +159,8 @@ export default function App() {
             description: fields.description !== undefined ? cleanDescription(fields.description) : item.description,
             imagePrompt: fields.prompt !== undefined ? fields.prompt : item.imagePrompt,
             imageUrl: fields.imageUrl !== undefined ? fields.imageUrl : item.imageUrl,
+            imageUrl916: fields.imageUrl916 !== undefined ? fields.imageUrl916 : item.imageUrl916,
+            imageUrl169: fields.imageUrl169 !== undefined ? fields.imageUrl169 : item.imageUrl169,
           };
         }
         return item;
@@ -196,46 +205,7 @@ export default function App() {
       setScannedDescription(cleanDescription(scanData.description));
       setScannedPrompt(scanData.imagePrompt);
 
-      // Step 2: Auto-Generate Picture & Upload to Azure (BOOST)
-      setLoadingStep("image");
-      const imageResponse = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: scanData.imagePrompt,
-          model,
-          aspectRatio,
-          resolution,
-          promptTemplate: settings.promptTemplate,
-          bizName: settings.bizName,
-          watermark: settings.watermark,
-          url: url,
-          title: scanData.title,
-          description: scanData.description,
-        }),
-      });
-
-      let imageUrl = "";
-      let azureUrl = "";
-      let azureStatus = "Not Generated";
-
-      if (!imageResponse.ok) {
-        const errorData = await imageResponse.json().catch(() => ({}));
-        console.warn("Auto-boost image generation failed:", errorData.error);
-        setImageError(errorData.error || "Image generation pipeline failed");
-      } else {
-        setLoadingStep("azure");
-        const imageData = await imageResponse.json();
-        if (imageData.success) {
-          imageUrl = imageData.imageUrl;
-          azureUrl = imageData.azureUrl;
-          azureStatus = imageData.azureStatus;
-        } else {
-          console.warn("Auto-boost image generation failed:", imageData.error);
-          setImageError(imageData.error || "Image asset creation pipeline error");
-        }
-      }
-
+      // Step 2: Update item details without auto-generating pictures.
       // Check if URL already exists in history to satisfy: "HISTORY should be created only if URL changed."
       const cleanUrl = (u: string) => {
         try {
@@ -253,50 +223,47 @@ export default function App() {
       let targetId = "";
 
       if (existingItemIndex > -1) {
-        // Update the existing item
+        // Update the existing item but do not auto create pictures
         const existingItem = items[existingItemIndex];
-        const newPastImageUrls = [...(existingItem.pastImageUrls || [])];
-        if (existingItem.imageUrl && !newPastImageUrls.includes(existingItem.imageUrl)) {
-          newPastImageUrls.unshift(existingItem.imageUrl);
-        }
-        if (imageUrl && !newPastImageUrls.includes(imageUrl)) {
-          newPastImageUrls.push(imageUrl);
-        }
-
         const updatedItem: ScannedItem = {
           ...existingItem,
           title: scanData.title,
           description: cleanDescription(scanData.description),
           imagePrompt: scanData.imagePrompt,
-          imageUrl: imageUrl || existingItem.imageUrl,
-          azureUrl: azureUrl || existingItem.azureUrl,
-          azureStatus: azureStatus !== "Not Generated" ? azureStatus : existingItem.azureStatus,
           model,
           aspectRatio,
           resolution,
           timestamp: Date.now(),
-          pastImageUrls: newPastImageUrls,
         };
         // Remove from current position and prepend to the top
         const filtered = items.filter((_, idx) => idx !== existingItemIndex);
         updated = [updatedItem, ...filtered];
         targetId = existingItem.id;
       } else {
-        // Create new item
+        // Create new item with empty/default image fields
         const newItem: ScannedItem = {
           id: `boost_${Date.now()}`,
           url,
           title: scanData.title,
           description: cleanDescription(scanData.description),
           imagePrompt: scanData.imagePrompt,
-          imageUrl,
-          azureUrl,
-          azureStatus,
+          imageUrl: "",
+          azureUrl: "",
+          azureStatus: "Not Generated",
+          imageUrl916: "",
+          imageUrl169: "",
+          imageUrl11: "",
+          azureUrl916: "",
+          azureUrl169: "",
+          azureUrl11: "",
+          azureStatus916: "Not Generated",
+          azureStatus169: "Not Generated",
+          azureStatus11: "Not Generated",
           model,
           aspectRatio,
           resolution,
           timestamp: Date.now(),
-          pastImageUrls: imageUrl ? [imageUrl] : [],
+          pastImageUrls: [],
         };
         updated = [newItem, ...items];
         targetId = newItem.id;
@@ -324,50 +291,112 @@ export default function App() {
       const activeItem = items.find((item) => item.id === selectedId);
       if (!activeItem) throw new Error("No active URL item selected to regenerate image for");
 
-      const imageResponse = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt,
-          model,
-          aspectRatio,
-          resolution,
-          promptTemplate: settings.promptTemplate,
-          bizName: settings.bizName,
-          watermark: settings.watermark,
-          url: activeItem.url,
-          title: activeItem.title,
-          description: activeItem.description,
+      const [imageResponse169, imageResponse11] = await Promise.all([
+        fetch("/api/generate-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt,
+            model: "chat-gpt",
+            Model: "chat-gpt",
+            aspectRatio: "16:9",
+            resolution,
+            promptTemplate: settings.promptTemplate,
+            bizName: settings.bizName,
+            watermark: settings.watermark,
+            url: activeItem.url,
+            title: activeItem.title,
+            description: activeItem.description,
+          }),
         }),
-      });
+        fetch("/api/generate-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt,
+            model: "chat-gpt",
+            Model: "chat-gpt",
+            aspectRatio: "1:1",
+            resolution,
+            promptTemplate: settings.promptTemplate,
+            bizName: settings.bizName,
+            watermark: settings.watermark,
+            url: activeItem.url,
+            title: activeItem.title,
+            description: activeItem.description,
+          }),
+        })
+      ]);
 
-      if (!imageResponse.ok) {
-        const errorData = await imageResponse.json().catch(() => ({}));
-        throw new Error(errorData.error || "Image generation pipeline failed");
+      let imageUrl169 = "";
+      let azureUrl169 = "";
+      let azureStatus169 = "Not Generated";
+
+      let imageUrl11 = "";
+      let azureUrl11 = "";
+      let azureStatus11 = "Not Generated";
+
+      if (!imageResponse169.ok) {
+        const errorData = await imageResponse169.json().catch(() => ({}));
+        console.warn("16:9 image regeneration failed:", errorData.error);
+        setImageError(errorData.error || "16:9 image generation pipeline failed");
+      } else {
+        const imageData169 = await imageResponse169.json();
+        if (imageData169.success) {
+          imageUrl169 = imageData169.imageUrl;
+          azureUrl169 = imageData169.azureUrl;
+          azureStatus169 = imageData169.azureStatus;
+        } else {
+          console.warn("16:9 image regeneration failed:", imageData169.error);
+          setImageError(imageData169.error || "16:9 Image asset creation pipeline error");
+        }
       }
 
-      setLoadingStep("azure");
-      const imageData = await imageResponse.json();
-      if (!imageData.success) {
-        throw new Error(imageData.error || "Image asset creation pipeline error");
+      if (!imageResponse11.ok) {
+        const errorData = await imageResponse11.json().catch(() => ({}));
+        console.warn("1:1 image regeneration failed:", errorData.error);
+        setImageError(errorData.error || "1:1 image generation pipeline failed");
+      } else {
+        const imageData11 = await imageResponse11.json();
+        if (imageData11.success) {
+          imageUrl11 = imageData11.imageUrl;
+          azureUrl11 = imageData11.azureUrl;
+          azureStatus11 = imageData11.azureStatus;
+        } else {
+          console.warn("1:1 image regeneration failed:", imageData11.error);
+          setImageError(imageData11.error || "1:1 Image asset creation pipeline error");
+        }
       }
 
       // Update current selected item
       const updated = items.map((item) => {
         if (item.id === selectedId) {
           const newPast = [...(item.pastImageUrls || [])];
-          if (item.imageUrl && !newPast.includes(item.imageUrl)) {
-            newPast.push(item.imageUrl);
+          if (item.imageUrl169 && !newPast.includes(item.imageUrl169)) {
+            newPast.push(item.imageUrl169);
           }
-          if (imageData.imageUrl && !newPast.includes(imageData.imageUrl)) {
-            newPast.push(imageData.imageUrl);
+          if (item.imageUrl11 && !newPast.includes(item.imageUrl11)) {
+            newPast.push(item.imageUrl11);
           }
+          if (imageUrl169 && !newPast.includes(imageUrl169)) {
+            newPast.push(imageUrl169);
+          }
+          if (imageUrl11 && !newPast.includes(imageUrl11)) {
+            newPast.push(imageUrl11);
+          }
+
           return {
             ...item,
             imagePrompt: prompt,
-            imageUrl: imageData.imageUrl,
-            azureUrl: imageData.azureUrl,
-            azureStatus: imageData.azureStatus,
+            imageUrl: imageUrl11 || imageUrl169 || item.imageUrl,
+            azureUrl: azureUrl11 || azureUrl169 || item.azureUrl,
+            azureStatus: azureStatus11 !== "Not Generated" ? azureStatus11 : (azureStatus169 !== "Not Generated" ? azureStatus169 : item.azureStatus),
+            imageUrl169: imageUrl169 || item.imageUrl169,
+            imageUrl11: imageUrl11 || item.imageUrl11,
+            azureUrl169: azureUrl169 || item.azureUrl169,
+            azureUrl11: azureUrl11 || item.azureUrl11,
+            azureStatus169: azureStatus169 !== "Not Generated" ? azureStatus169 : item.azureStatus169,
+            azureStatus11: azureStatus11 !== "Not Generated" ? azureStatus11 : item.azureStatus11,
             model,
             aspectRatio,
             resolution,

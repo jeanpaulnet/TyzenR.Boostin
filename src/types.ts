@@ -12,6 +12,15 @@ export interface ScannedItem {
   resolution: string;
   timestamp: number;
   pastImageUrls?: string[];
+  imageUrl916?: string;
+  imageUrl169?: string;
+  imageUrl11?: string;
+  azureUrl916?: string;
+  azureUrl169?: string;
+  azureUrl11?: string;
+  azureStatus916?: string;
+  azureStatus169?: string;
+  azureStatus11?: string;
 }
 
 export interface Settings {

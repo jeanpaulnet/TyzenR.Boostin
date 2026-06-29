@@ -46,7 +46,7 @@ export default function SettingsDialog({
     setWebsite("www.yourbiz.org");
     setWatermark("Watermark");
     setCommonTags("#trending #news");
-    setPromptTemplate("create an ultra-realistic corporate financial like detailed picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle '{settings.business.name}' on bottom with watermark '{settings.watermark}' below it. ");
+    setPromptTemplate("create an ultra-realistic corporate financial picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle '{settings.business.name}' on bottom with watermark '{settings.watermark}' below it. ");
   };
 
   return (

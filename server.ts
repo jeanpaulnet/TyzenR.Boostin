@@ -386,12 +386,361 @@ app.post("/api/generate-image", async (req, res) => {
   }
 });
 
+// Helper to automatically scan and resolve Instagram / Meta App ID and Secret from process.env
+function resolveInstagramCredentials() {
+  let appId = process.env.INSTAGRAM_APP_ID || process.env.FACEBOOK_APP_ID;
+  let appSecret = process.env.INSTAGRAM_APP_SECRET || process.env.FACEBOOK_APP_SECRET;
+
+  if (appId && appSecret) {
+    return { appId, appSecret };
+  }
+
+  const envKeys = Object.keys(process.env);
+  
+  if (!appId) {
+    const idKey = envKeys.find(key => {
+      const uKey = key.toUpperCase();
+      return (
+        (uKey.includes("INSTAGRAM") || uKey.includes("FACEBOOK") || uKey.includes("META") || uKey.includes("IG_") || uKey.includes("FB_")) &&
+        (uKey.includes("APP_ID") || uKey.includes("CLIENT_ID") || uKey === "INSTAGRAM_ID" || uKey === "FACEBOOK_ID")
+      );
+    });
+    if (idKey) {
+      appId = process.env[idKey];
+      console.log(`[Auto-Detect] Automatically resolved App ID from env key: ${idKey}`);
+    }
+  }
+
+  if (!appSecret) {
+    const secretKey = envKeys.find(key => {
+      const uKey = key.toUpperCase();
+      return (
+        (uKey.includes("INSTAGRAM") || uKey.includes("FACEBOOK") || uKey.includes("META") || uKey.includes("IG_") || uKey.includes("FB_")) &&
+        (uKey.includes("APP_SECRET") || uKey.includes("CLIENT_SECRET") || uKey.includes("SECRET"))
+      );
+    });
+    if (secretKey) {
+      appSecret = process.env[secretKey];
+      console.log(`[Auto-Detect] Automatically resolved App Secret from env key: ${secretKey}`);
+    }
+  }
+
+  return { appId, appSecret };
+}
+
 // Serve API check/status
 app.get("/api/status", (req, res) => {
+  const { appId, appSecret } = resolveInstagramCredentials();
   res.json({
     status: "online",
     hasApiKey: !!process.env.GEMINI_API_KEY,
+    hasInstagramConfig: !!(appId && appSecret),
+    instagramAppId: appId ? `${appId.slice(0, 4)}...${appId.slice(-4)}` : null,
   });
+});
+
+// Instagram integration routes
+app.get("/api/auth/instagram/url", (req, res) => {
+  const origin = req.query.origin || `${req.protocol}://${req.get("host")}`;
+  const redirectUri = `${origin}/auth/instagram/callback`;
+  
+  const { appId } = resolveInstagramCredentials();
+  if (!appId) {
+    return res.status(400).json({ error: "No Meta/Instagram App ID could be detected automatically. Make sure you set INSTAGRAM_APP_ID in your project secrets." });
+  }
+
+  const params = new URLSearchParams({
+    client_id: appId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement,pages_manage_posts",
+  });
+
+  const authUrl = `https://www.facebook.com/v20.0/dialog/oauth?${params.toString()}`;
+  res.json({ url: authUrl });
+});
+
+app.get("/auth/instagram/callback", async (req, res) => {
+  const { code } = req.query;
+  const origin = `${req.protocol}://${req.get("host")}`;
+  const redirectUri = `${origin}/auth/instagram/callback`;
+
+  const { appId, appSecret } = resolveInstagramCredentials();
+
+  if (!code) {
+    return res.send(`
+      <html>
+        <body>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage({ type: "OAUTH_AUTH_FAILURE", error: "No code received from Meta" }, "*");
+              window.close();
+            } else {
+              window.location.href = "/";
+            }
+          </script>
+        </body>
+      </html>
+    `);
+  }
+
+  try {
+    // 1. Exchange code for Facebook User Access Token
+    const tokenUrl = `https://graph.facebook.com/v20.0/oauth/access_token?` + new URLSearchParams({
+      client_id: appId || "",
+      redirect_uri: redirectUri,
+      client_secret: appSecret || "",
+      code: code as string,
+    });
+
+    const tokenResponse = await fetch(tokenUrl);
+    const tokenData = await tokenResponse.json();
+
+    if (tokenData.error) {
+      throw new Error(tokenData.error.message || "Failed to exchange authorization code for access token.");
+    }
+
+    const userAccessToken = tokenData.access_token;
+
+    // 2. Exchange for Long-lived Access Token (lasts ~60 days)
+    const longLivedUrl = `https://graph.facebook.com/v20.0/oauth/access_token?` + new URLSearchParams({
+      grant_type: "fb_exchange_token",
+      client_id: appId || "",
+      client_secret: appSecret || "",
+      fb_exchange_token: userAccessToken,
+    });
+
+    const longLivedResponse = await fetch(longLivedUrl);
+    const longLivedData = await longLivedResponse.json();
+    const longLivedToken = longLivedData.access_token || userAccessToken;
+
+    // 3. Get Pages list to find a page connected to Instagram Business Account and Facebook Pages
+    const pagesUrl = `https://graph.facebook.com/v20.0/me/accounts?access_token=${longLivedToken}`;
+    const pagesResponse = await fetch(pagesUrl);
+    const pagesData = await pagesResponse.json();
+
+    let instagramAccounts: { pageId: string; pageName: string; instagramBusinessAccountId: string; pageAccessToken: string }[] = [];
+    let facebookPages: { pageId: string; pageName: string; pageAccessToken: string }[] = [];
+
+    if (pagesData.data && Array.isArray(pagesData.data)) {
+      for (const page of pagesData.data) {
+        const pageId = page.id;
+        const pageName = page.name;
+        const pageAccessToken = page.access_token;
+
+        facebookPages.push({
+          pageId,
+          pageName,
+          pageAccessToken,
+        });
+
+        // Query Instagram Business Account connected to this page
+        const igUrl = `https://graph.facebook.com/v20.0/${pageId}?fields=instagram_business_account&access_token=${pageAccessToken}`;
+        const igResponse = await fetch(igUrl);
+        const igData = await igResponse.json();
+
+        if (igData.instagram_business_account && igData.instagram_business_account.id) {
+          instagramAccounts.push({
+            pageId,
+            pageName,
+            instagramBusinessAccountId: igData.instagram_business_account.id,
+            pageAccessToken,
+          });
+        }
+      }
+    }
+
+    res.send(`
+      <html>
+        <body>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage({ 
+                type: "OAUTH_AUTH_SUCCESS", 
+                payload: {
+                  accessToken: ${JSON.stringify(longLivedToken)},
+                  accounts: ${JSON.stringify(instagramAccounts)},
+                  facebookPages: ${JSON.stringify(facebookPages)}
+                }
+              }, "*");
+              window.close();
+            } else {
+              window.location.href = "/";
+            }
+          </script>
+          <p>Authentication successful! You can now close this window.</p>
+        </body>
+      </html>
+    `);
+
+  } catch (error: any) {
+    console.error("Instagram/Facebook OAuth Error:", error);
+    res.send(`
+      <html>
+        <body>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage({ type: "OAUTH_AUTH_FAILURE", error: ${JSON.stringify(error.message)} }, "*");
+              window.close();
+            } else {
+              window.location.href = "/";
+            }
+          </script>
+          <p>Authentication failed: ${error.message}</p>
+        </body>
+      </html>
+    `);
+  }
+});
+
+app.post("/api/facebook/post", async (req, res) => {
+  const { imageUrl, caption, pageId, pageAccessToken, origin } = req.body;
+
+  if (!imageUrl || !caption || !pageId || !pageAccessToken) {
+    return res.status(400).json({
+      success: false,
+      error: "Missing required parameters. Make sure image, caption, page ID, and Page Access Token are provided."
+    });
+  }
+
+  // 1. Construct absolute image URL
+  let finalImageUrl = imageUrl;
+  if (imageUrl.startsWith("/")) {
+    const baseOrigin = origin || `${req.protocol}://${req.get("host")}`;
+    finalImageUrl = `${baseOrigin}${imageUrl}`;
+  }
+
+  console.log(`[Facebook Page Post] Posting image: ${finalImageUrl} to Facebook Page: ${pageId}`);
+
+  try {
+    const postPhotoUrl = `https://graph.facebook.com/v20.0/${pageId}/photos`;
+    const response = await fetch(postPhotoUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        url: finalImageUrl,
+        message: caption,
+        access_token: pageAccessToken
+      })
+    });
+
+    const data = await response.json();
+    if (data.error) {
+      throw new Error(data.error.message || "Failed to post to Facebook Page.");
+    }
+
+    console.log(`[Facebook Page Post] Successfully posted to Facebook! Post ID: ${data.post_id || data.id}`);
+
+    return res.json({
+      success: true,
+      postId: data.post_id || data.id,
+    });
+
+  } catch (error: any) {
+    console.error("[Facebook Page Post Error]", error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || "An unexpected error occurred while posting to Facebook Page."
+    });
+  }
+});
+
+app.post("/api/instagram/post", async (req, res) => {
+  const { imageUrl, caption, accessToken, instagramBusinessAccountId, origin } = req.body;
+
+  if (!imageUrl || !caption || !accessToken || !instagramBusinessAccountId) {
+    return res.status(400).json({
+      success: false,
+      error: "Missing required parameters. Make sure image, caption, access token, and Instagram Business Account ID are provided."
+    });
+  }
+
+  // 1. Construct absolute image URL
+  let finalImageUrl = imageUrl;
+  if (imageUrl.startsWith("/")) {
+    const baseOrigin = origin || `${req.protocol}://${req.get("host")}`;
+    finalImageUrl = `${baseOrigin}${imageUrl}`;
+  }
+
+  console.log(`[Instagram Post] Posting image: ${finalImageUrl} to Instagram Account: ${instagramBusinessAccountId}`);
+
+  try {
+    // 2. Create Media Container
+    const createContainerUrl = `https://graph.facebook.com/v20.0/${instagramBusinessAccountId}/media`;
+    const createResponse = await fetch(createContainerUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        image_url: finalImageUrl,
+        caption: caption,
+        access_token: accessToken
+      })
+    });
+
+    const createData = await createResponse.json();
+    if (createData.error) {
+      throw new Error(createData.error.message || "Failed to create media container on Instagram. Check image URL and access token permissions.");
+    }
+
+    const containerId = createData.id;
+    console.log(`[Instagram Post] Media container created with ID: ${containerId}. Polling status...`);
+
+    // 3. Poll container status (recommended by Meta to avoid publishing pending media)
+    let isReady = false;
+    let attempts = 0;
+    while (!isReady && attempts < 15) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const statusResponse = await fetch(`https://graph.facebook.com/v20.0/${containerId}?fields=status_code,failure_reason&access_token=${accessToken}`);
+      const statusData = await statusResponse.json();
+      
+      const statusCode = statusData.status_code;
+      console.log(`[Instagram Post] Container status: ${statusCode} (Attempt ${attempts + 1})`);
+      
+      if (statusCode === "FINISHED") {
+        isReady = true;
+      } else if (statusCode === "ERROR") {
+        throw new Error(`Media container processing failed: ${statusData.failure_reason || "unknown reason"}`);
+      }
+      attempts++;
+    }
+
+    // 4. Publish Media Container
+    const publishUrl = `https://graph.facebook.com/v20.0/${instagramBusinessAccountId}/media_publish`;
+    const publishResponse = await fetch(publishUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        creation_id: containerId,
+        access_token: accessToken
+      })
+    });
+
+    const publishData = await publishResponse.json();
+    if (publishData.error) {
+      throw new Error(publishData.error.message || "Failed to publish media container on Instagram.");
+    }
+
+    const postId = publishData.id;
+    console.log(`[Instagram Post] Successfully posted to Instagram! Post ID: ${postId}`);
+
+    return res.json({
+      success: true,
+      postId: postId,
+    });
+
+  } catch (error: any) {
+    console.error("[Instagram Post Error]", error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || "An unexpected error occurred while posting to Instagram."
+    });
+  }
 });
 
 // Vite & Static file handler

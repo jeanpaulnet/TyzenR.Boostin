@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Maximize2, Download, Copy, Check, Eye, ExternalLink, HelpCircle, AlertCircle, Sparkles, Sliders, History, Loader2 } from "lucide-react";
+import { Maximize2, Download, Copy, Check, Eye, ExternalLink, AlertCircle, Sparkles, History, Loader2 } from "lucide-react";
 import { ScannedItem, Settings } from "../types";
 
 interface PreviewPaneProps {
@@ -38,17 +38,75 @@ export default function PreviewPane({
   imageError = null,
   setImageError,
 }: PreviewPaneProps) {
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [fullscreenImgUrl, setFullscreenImgUrl] = useState<string | null>(null);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [showPastUrls, setShowPastUrls] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyImageToClipboard = async (imgUrl: string) => {
+    try {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = imgUrl;
+      });
+
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Could not get canvas context");
+      ctx.drawImage(img, 0, 0);
+
+      const blob = await new Promise<Blob | null>((resolve) => 
+        canvas.toBlob((b) => resolve(b), "image/png")
+      );
+
+      if (!blob) throw new Error("Canvas toBlob failed");
+
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          [blob.type]: blob
+        })
+      ]);
+      return true;
+    } catch (err) {
+      console.error("Failed to copy image to clipboard via canvas:", err);
+      try {
+        const response = await fetch(imgUrl);
+        const blob = await response.blob();
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            [blob.type]: blob
+          })
+        ]);
+        return true;
+      } catch (directErr) {
+        console.error("Direct write also failed:", directErr);
+        return false;
+      }
+    }
+  };
+
+  const handleCopyImage = async (url: string, id: string) => {
+    const success = await copyImageToClipboard(url);
+    if (success) {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    }
+  };
+
+
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" || e.key === "Esc") {
-        setIsFullscreen(false);
+        setFullscreenImgUrl(null);
       }
     };
-    if (isFullscreen) {
+    if (fullscreenImgUrl) {
       window.addEventListener("keydown", handleKeyDown);
       document.body.style.overflow = "hidden";
     } else {
@@ -58,7 +116,7 @@ export default function PreviewPane({
       window.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = "";
     };
-  }, [isFullscreen]);
+  }, [fullscreenImgUrl]);
 
   const pastUrlsList = activeItem
     ? activeItem.pastImageUrls && activeItem.pastImageUrls.length > 0
@@ -68,8 +126,21 @@ export default function PreviewPane({
         : []
     : [];
 
+  const hasMultipleImages = !!(activeItem && (activeItem.imageUrl11 || activeItem.imageUrl169));
+
   const handleDownload = () => {
-    if (!activeItem || !activeItem.imageUrl) return;
+    if (!activeItem) return;
+
+    const urlsToDownload: string[] = [];
+    if (activeItem.imageUrl11) urlsToDownload.push(activeItem.imageUrl11);
+    if (activeItem.imageUrl169) urlsToDownload.push(activeItem.imageUrl169);
+
+    // If none of the specific ones exist but the general imageUrl exists, use it
+    if (urlsToDownload.length === 0 && activeItem.imageUrl) {
+      urlsToDownload.push(activeItem.imageUrl);
+    }
+
+    if (urlsToDownload.length === 0) return;
 
     // Sanitize business name (remove spaces & special chars)
     const bizNameClean = (settings?.bizName || "Biz").replace(/[^a-zA-Z0-9]/g, "");
@@ -84,10 +155,38 @@ export default function PreviewPane({
     const ss = String(now.getSeconds()).padStart(2, "0");
     const datetimeClean = `${yyyy}${mm}${dd}${hh}${min}${ss}`;
 
-    const filename = `Boostin-${bizNameClean}-${datetimeClean}.png`;
+    urlsToDownload.forEach((url) => {
+      let suffix = "";
+      if (url === activeItem.imageUrl11) suffix = "-1_1";
+      else if (url === activeItem.imageUrl916) suffix = "-9_16";
+      else if (url === activeItem.imageUrl169) suffix = "-16_9";
+      
+      const filename = `Boostin-${bizNameClean}-${datetimeClean}${suffix}.png`;
+
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    });
+  };
+
+  const handleDownloadSpecific = (url: string, suffix: string) => {
+    if (!activeItem) return;
+    const bizNameClean = (settings?.bizName || "Biz").replace(/[^a-zA-Z0-9]/g, "");
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const dd = String(now.getDate()).padStart(2, "0");
+    const hh = String(now.getHours()).padStart(2, "0");
+    const min = String(now.getMinutes()).padStart(2, "0");
+    const ss = String(now.getSeconds()).padStart(2, "0");
+    const datetimeClean = `${yyyy}${mm}${dd}${hh}${min}${ss}`;
+    const filename = `Boostin-${bizNameClean}-${datetimeClean}${suffix}.png`;
 
     const link = document.createElement("a");
-    link.href = activeItem.imageUrl; // Using local server cached image so it triggers immediate local download
+    link.href = url;
     link.download = filename;
     document.body.appendChild(link);
     link.click();
@@ -193,10 +292,10 @@ export default function PreviewPane({
         <div className="flex items-center gap-2">
           <button
             id="fullscreen-action-btn"
-            disabled={!activeItem || !activeItem.imageUrl || isLoading}
-            onClick={() => setIsFullscreen(true)}
+            disabled={!activeItem || (!activeItem.imageUrl && !activeItem.imageUrl169 && !activeItem.imageUrl11) || isLoading}
+            onClick={() => setFullscreenImgUrl(activeItem.imageUrl11 || activeItem.imageUrl169 || activeItem.imageUrl || null)}
             className={`p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl border border-slate-200 transition-all flex items-center justify-center ${
-              !activeItem || !activeItem.imageUrl || isLoading ? "opacity-40 cursor-not-allowed pointer-events-none" : "hover:scale-105 active:scale-[0.98]"
+              !activeItem || (!activeItem.imageUrl && !activeItem.imageUrl169 && !activeItem.imageUrl11) || isLoading ? "opacity-40 cursor-not-allowed pointer-events-none" : "hover:scale-105 active:scale-[0.98]"
             }`}
             title="Full Screen View"
           >
@@ -204,11 +303,30 @@ export default function PreviewPane({
           </button>
 
           <button
+            id="copy-picture-action-btn"
+            disabled={!activeItem || (!activeItem.imageUrl && !activeItem.imageUrl169 && !activeItem.imageUrl11) || isLoading}
+            onClick={() => {
+              const url = activeItem?.imageUrl11 || activeItem?.imageUrl169 || activeItem?.imageUrl;
+              if (url) handleCopyImage(url, "top-copy");
+            }}
+            className={`p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl border border-slate-200 transition-all active:scale-[0.98] flex items-center justify-center ${
+              !activeItem || (!activeItem.imageUrl && !activeItem.imageUrl169 && !activeItem.imageUrl11) || isLoading ? "opacity-40 cursor-not-allowed pointer-events-none" : "hover:scale-105"
+            }`}
+            title="Copy Picture to Clipboard"
+          >
+            {copiedId === "top-copy" ? (
+              <Check className="w-4 h-4 text-emerald-600" />
+            ) : (
+              <Copy className="w-4 h-4 text-slate-600" />
+            )}
+          </button>
+
+          <button
             id="download-action-btn"
-            disabled={!activeItem || !activeItem.imageUrl || isLoading}
+            disabled={!activeItem || (!activeItem.imageUrl && !activeItem.imageUrl169 && !activeItem.imageUrl11) || isLoading}
             onClick={handleDownload}
             className={`p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl border border-slate-200 transition-all active:scale-[0.98] flex items-center justify-center ${
-              !activeItem || !activeItem.imageUrl || isLoading ? "opacity-40 cursor-not-allowed pointer-events-none" : "hover:scale-105"
+              !activeItem || (!activeItem.imageUrl && !activeItem.imageUrl169 && !activeItem.imageUrl11) || isLoading ? "opacity-40 cursor-not-allowed pointer-events-none" : "hover:scale-105"
             }`}
             title="Download Visual"
           >
@@ -240,7 +358,7 @@ export default function PreviewPane({
 
 
       {/* Main Image Visual Container */}
-      <div className={`flex flex-col items-center justify-center bg-slate-50/50 rounded-2xl border border-slate-200/60 p-4 relative overflow-hidden transition-all duration-300 ${getContainerHeightClass(aspectRatio)}`}>
+      <div className={`flex flex-col items-center justify-start bg-slate-50/50 rounded-2xl border border-slate-200/60 p-4 relative transition-all duration-300 ${hasMultipleImages ? "h-[620px] overflow-y-auto w-full" : getContainerHeightClass(aspectRatio) + " overflow-hidden"}`}>
         {showPastUrls && (
           <div className="absolute inset-0 bg-slate-900/95 backdrop-blur-sm z-30 flex flex-col p-4 text-white">
             <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
@@ -378,30 +496,174 @@ export default function PreviewPane({
             </div>
           </div>
         ) : activeItem ? (
-          activeItem.imageUrl ? (
-            <div className="w-full flex flex-col items-center">
-              
-              {/* Styled Preview Frame */}
-              <div 
-                className={`relative overflow-hidden rounded-xl shadow-xl border border-slate-200 bg-slate-950 transition-all duration-300 cursor-pointer hover:border-indigo-400 ${getAspectRatioClass(aspectRatio)}`}
-                onClick={() => setIsFullscreen(true)}
-                title="Click to view fullscreen"
-              >
-                <img
-                  src={activeItem.imageUrl}
-                  alt={activeItem.title}
-                  className="w-full h-full object-contain"
-                  referrerPolicy="no-referrer"
-                />
-                
-                {/* Floating controls on hover */}
-                <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <div className="p-3 bg-white/95 text-slate-800 rounded-full shadow-lg hover:scale-110 transition-all border border-slate-200/50 flex items-center justify-center">
-                    <Maximize2 className="w-5 h-5 text-indigo-600" />
+          (activeItem.imageUrl11 || activeItem.imageUrl169) ? (
+            <div className="w-full flex flex-col items-center space-y-6">
+              {/* 1:1 Image Display */}
+              {activeItem.imageUrl11 && (
+                <div className="w-full flex flex-col items-center space-y-2 animate-fade-in border-b border-slate-100/50 pb-5">
+                  <div className="flex items-center justify-between w-full max-w-[220px] px-1">
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider font-mono">
+                      1:1 Square Post
+                    </span>
+                    <span className="text-[9px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-bold font-mono">
+                      Square
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div 
+                      className="relative overflow-hidden rounded-xl shadow-lg border border-slate-200 bg-slate-950 transition-all duration-300 cursor-pointer hover:border-indigo-400 w-[220px] aspect-square flex-shrink-0"
+                      onClick={() => setFullscreenImgUrl(activeItem.imageUrl11 || null)}
+                      title="Click to view fullscreen"
+                    >
+                      <img
+                        src={activeItem.imageUrl11}
+                        alt={`${activeItem.title || "Branded Visual"} - 1:1`}
+                        className="w-full h-full object-contain"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+                    {/* Compact actions block to the right */}
+                    <div className="flex flex-col gap-1.5 p-1 bg-slate-50 rounded-lg border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setFullscreenImgUrl(activeItem.imageUrl11 || null)}
+                        className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
+                        title="View Fullscreen"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyImage(activeItem.imageUrl11!, "11")}
+                        className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-emerald-600 transition-colors cursor-pointer"
+                        title="Copy to Clipboard"
+                      >
+                        {copiedId === "11" ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadSpecific(activeItem.imageUrl11!, "-1_1")}
+                        className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
+                        title="Download Picture"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
+              {/* 16:9 Image Display */}
+              {activeItem.imageUrl169 && (
+                <div className="w-full flex flex-col items-center space-y-2 animate-fade-in pb-2">
+                  <div className="flex items-center justify-between w-full max-w-[280px] px-1">
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider font-mono">
+                      16:9 Landscape Banner
+                    </span>
+                    <span className="text-[9px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-bold font-mono">
+                      Wide
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div 
+                      className="relative overflow-hidden rounded-xl shadow-lg border border-slate-200 bg-slate-950 transition-all duration-300 cursor-pointer hover:border-indigo-400 w-[280px] aspect-[16/9] flex-shrink-0"
+                      onClick={() => setFullscreenImgUrl(activeItem.imageUrl169 || null)}
+                      title="Click to view fullscreen"
+                    >
+                      <img
+                        src={activeItem.imageUrl169}
+                        alt={`${activeItem.title || "Branded Visual"} - 16:9`}
+                        className="w-full h-full object-contain"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+                    {/* Compact actions block to the right */}
+                    <div className="flex flex-col gap-1.5 p-1 bg-slate-50 rounded-lg border border-slate-200 self-center">
+                      <button
+                        type="button"
+                        onClick={() => setFullscreenImgUrl(activeItem.imageUrl169 || null)}
+                        className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
+                        title="View Fullscreen"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyImage(activeItem.imageUrl169!, "169")}
+                        className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-emerald-600 transition-colors cursor-pointer"
+                        title="Copy to Clipboard"
+                      >
+                        {copiedId === "169" ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadSpecific(activeItem.imageUrl169!, "-16_9")}
+                        className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
+                        title="Download Picture"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : activeItem.imageUrl ? (
+            <div className="w-full flex flex-col items-center">
+              <div className="flex items-center gap-3 w-full justify-center">
+                {/* Styled Preview Frame (Legacy Fallback) */}
+                <div 
+                  className={`relative overflow-hidden rounded-xl shadow-xl border border-slate-200 bg-slate-950 transition-all duration-300 cursor-pointer hover:border-indigo-400 ${getAspectRatioClass(aspectRatio)}`}
+                  onClick={() => setFullscreenImgUrl(activeItem.imageUrl)}
+                  title="Click to view fullscreen"
+                >
+                  <img
+                    src={activeItem.imageUrl}
+                    alt={activeItem.title}
+                    className="w-full h-full object-contain"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+                {/* Compact actions block to the right */}
+                <div className="flex flex-col gap-1.5 p-1 bg-slate-50 rounded-lg border border-slate-200 self-center">
+                  <button
+                    type="button"
+                    onClick={() => setFullscreenImgUrl(activeItem.imageUrl)}
+                    className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
+                    title="View Fullscreen"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyImage(activeItem.imageUrl, "fallback")}
+                    className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-emerald-600 transition-colors cursor-pointer"
+                    title="Copy to Clipboard"
+                  >
+                    {copiedId === "fallback" ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadSpecific(activeItem.imageUrl, "")}
+                    className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
+                    title="Download Picture"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
             </div>
           ) : (
             <div className="text-center p-6 flex flex-col items-center">
@@ -427,20 +689,22 @@ export default function PreviewPane({
         )}
       </div>
 
+
+
       {/* Parameters are hidden by default (always using 1:1 Aspect Ratio and 1K Resolution) */}
 
 
       {/* Fullscreen View Modal */}
-      {isFullscreen && activeItem && activeItem.imageUrl && createPortal(
+      {fullscreenImgUrl && createPortal(
         <div 
           id="fullscreen-overlay" 
           className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center p-4 animate-fade-in"
-          onClick={() => setIsFullscreen(false)}
+          onClick={() => setFullscreenImgUrl(null)}
         >
           {/* Close button top right of the screen */}
           <button
             id="close-fullscreen-btn"
-            onClick={() => setIsFullscreen(false)}
+            onClick={() => setFullscreenImgUrl(null)}
             className="absolute top-6 right-6 p-3 bg-slate-900/80 hover:bg-slate-900 text-white/80 hover:text-white rounded-full transition-all cursor-pointer z-[10000] flex items-center justify-center active:scale-90 border border-white/10 shadow-lg"
             title="Close Fullscreen (Esc)"
           >
@@ -455,8 +719,8 @@ export default function PreviewPane({
             onClick={(e) => e.stopPropagation()}
           >
             <img
-              src={activeItem.imageUrl}
-              alt={activeItem.title || "Branded Visual"}
+              src={fullscreenImgUrl}
+              alt={activeItem?.title || "Branded Visual"}
               className="max-w-[95vw] max-h-[95vh] object-contain rounded-xl shadow-2xl border border-white/5"
               referrerPolicy="no-referrer"
             />
