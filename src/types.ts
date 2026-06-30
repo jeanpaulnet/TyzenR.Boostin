@@ -21,6 +21,7 @@ export interface ScannedItem {
   azureStatus916?: string;
   azureStatus169?: string;
   azureStatus11?: string;
+  promptType?: "summary" | "detailed";
 }
 
 export interface Settings {
@@ -28,5 +29,6 @@ export interface Settings {
   website: string;
   watermark: string;
   promptTemplate: string;
+  detailedPromptTemplate: string;
   commonTags: string;
 }

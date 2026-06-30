@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { X, Save, Shield, HelpCircle, Check, Database } from "lucide-react";
 import { Settings } from "../types";
 
@@ -20,8 +20,35 @@ export default function SettingsDialog({
   const [watermark, setWatermark] = useState(settings.watermark);
   const [commonTags, setCommonTags] = useState(settings.commonTags || "#trending #news");
   const [promptTemplate, setPromptTemplate] = useState(settings.promptTemplate);
+  const [detailedPromptTemplate, setDetailedPromptTemplate] = useState(
+    settings.detailedPromptTemplate ||
+      "Create a highly detailed corporate financial image prompt. Use an ultra-realistic premium investor research cover style. Show business model, products, financial growth, market opportunity, risks, valuation outlook, competitive positioning, and multibagger theme. Use vivid corporate colors, financial dashboards, stock charts, upward arrows, growth lines, product visuals, industry background, and rich cinematic depth."
+  );
   const [isSaved, setIsSaved] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+
+  // Sync state with settings prop when modal opens/changes
+  useEffect(() => {
+    if (isOpen) {
+      setBizName(settings.bizName);
+      setWebsite(settings.website);
+      setWatermark(settings.watermark);
+      setCommonTags(settings.commonTags || "#trending #news");
+      setPromptTemplate(settings.promptTemplate);
+      setDetailedPromptTemplate(
+        settings.detailedPromptTemplate ||
+          "Create a highly detailed corporate financial image prompt. Use an ultra-realistic premium investor research cover style. Show business model, products, financial growth, market opportunity, risks, valuation outlook, competitive positioning, and multibagger theme. Use vivid corporate colors, financial dashboards, stock charts, upward arrows, growth lines, product visuals, industry background, and rich cinematic depth."
+      );
+    }
+  }, [
+    isOpen,
+    settings.bizName,
+    settings.website,
+    settings.watermark,
+    settings.commonTags,
+    settings.promptTemplate,
+    settings.detailedPromptTemplate,
+  ]);
 
   if (!isOpen) return null;
 
@@ -32,6 +59,7 @@ export default function SettingsDialog({
       website,
       watermark,
       promptTemplate,
+      detailedPromptTemplate,
       commonTags: commonTags.toLowerCase(),
     });
     setIsSaved(true);
@@ -46,7 +74,8 @@ export default function SettingsDialog({
     setWebsite("www.yourbiz.org");
     setWatermark("Watermark");
     setCommonTags("#trending #news");
-    setPromptTemplate("create an ultra-realistic corporate financial picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle '{settings.business.name}' on bottom with watermark '{settings.watermark}' below it. ");
+    setPromptTemplate("Create a concise mobile-first summary image prompt. Use fewer visual sections. Focus on the article title, 3–5 key takeaways, vivid growth visuals, stock chart, product/business visuals, and rich cinematic depth.");
+    setDetailedPromptTemplate("Create a highly detailed corporate financial image prompt. Use an ultra-realistic premium investor research cover style. Show business model, products, financial growth, market opportunity, risks, valuation outlook, competitive positioning, and multibagger theme. Use vivid corporate colors, financial dashboards, stock charts, upward arrows, growth lines, product visuals, industry background, and rich cinematic depth.");
   };
 
   return (
@@ -137,9 +166,9 @@ export default function SettingsDialog({
           <hr className="border-slate-200/60" />
 
           {/* Prompt Template Panel */}
-          <div className="space-y-2">
+          <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <label className="inline-block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent uppercase tracking-wider font-display pb-0.5 pr-1">Picture Prompt Template</label>
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider font-display">Configure Templates</span>
               <button
                 type="button"
                 onClick={() => setShowHelp(!showHelp)}
@@ -161,14 +190,33 @@ export default function SettingsDialog({
               </div>
             )}
 
-            <textarea
-              id="setting-prompt-template"
-              value={promptTemplate}
-              onChange={(e) => setPromptTemplate(e.target.value)}
-              rows={4}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:bg-white transition-all"
-              required
-            ></textarea>
+            <div className="space-y-1.5">
+              <label className="inline-block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent uppercase tracking-wider font-display pb-0.5 pr-1">
+                Summary Picture Prompt
+              </label>
+              <textarea
+                id="setting-prompt-template"
+                value={promptTemplate}
+                onChange={(e) => setPromptTemplate(e.target.value)}
+                rows={4}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:bg-white transition-all"
+                required
+              ></textarea>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="inline-block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent uppercase tracking-wider font-display pb-0.5 pr-1">
+                Detailed Picture Prompt
+              </label>
+              <textarea
+                id="setting-detailed-prompt-template"
+                value={detailedPromptTemplate}
+                onChange={(e) => setDetailedPromptTemplate(e.target.value)}
+                rows={4}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:bg-white transition-all"
+                required
+              ></textarea>
+            </div>
           </div>
         </form>
 

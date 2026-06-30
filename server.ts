@@ -278,7 +278,7 @@ app.post("/api/generate-image", async (req, res) => {
     let base64ImageBytes = "";
 
     // Invoke the Tyzenr API as requested
-    console.log(`[Tyzenr] Invoking POST https://webapi.tyzenr.com/picture/create with aspect: ${aspectRatio || "1:1"}, res: ${resolution || "1K"}, model: ${model || null}, title: ${title || ""}, subtitle: ${bizName || ""}`);
+    console.log(`[Tyzenr] Invoking POST https://webapi.tyzenr.com/picture/create with aspect: ${aspectRatio || "1:1"}, res: ${resolution || "1K"}, model: ${model || "gpt"}, title: ${title || ""}, subtitle: ${bizName || ""}`);
     
     const tyzenrResponse = await fetch("https://webapi.tyzenr.com/picture/create", {
       method: "POST",
@@ -289,7 +289,7 @@ app.post("/api/generate-image", async (req, res) => {
         prompt: replacedPrompt,
         aspectRatio: aspectRatio || "1:1",
         resolution: resolution || "1K",
-        model: model || null,
+        model: model || "gpt",
         title: title || "",
         subtitle: bizName || ""
       }),
@@ -319,7 +319,7 @@ app.post("/api/generate-image", async (req, res) => {
       } else {
         try {
           const data = JSON.parse(text);
-          const possibleUrl = data.url || data.imageUrl || data.blobUrl || data.sasUrl || data.sasBlobUrl || data.link || (data.data && (data.data.url || data.data.imageUrl || data.data.blobUrl || data.data.sasUrl));
+          const possibleUrl = data.pictureUrl || data.result || data.url || data.imageUrl || data.blobUrl || data.sasUrl || data.sasBlobUrl || data.link || (data.data && (data.data.url || data.data.imageUrl || data.data.blobUrl || data.data.sasUrl));
           const possibleBase64 = data.base64 || data.b64_json || data.imageBytes || (data.data && (data.data.base64 || data.data.b64_json));
 
           if (possibleUrl && typeof possibleUrl === "string") {
@@ -359,6 +359,149 @@ app.post("/api/generate-image", async (req, res) => {
     }
 
     // If we got binary image bytes, save locally as cache fallback
+    if (base64ImageBytes) {
+      const filename = `boostin_${Date.now()}.png`;
+      const localPath = path.join(publicImagesDir, filename);
+      const buffer = Buffer.from(base64ImageBytes, "base64");
+      fs.writeFileSync(localPath, buffer);
+      const localUrl = `/images/${filename}`;
+
+      return res.json({
+        success: true,
+        imageUrl: localUrl,
+        azureUrl: localUrl,
+        azureStatus: "Success (Local Image Cached)",
+        base64: `data:image/png;base64,${base64ImageBytes}`,
+      });
+    }
+
+    throw new Error("Tyzenr API response did not contain a valid image URL or image bytes.");
+
+  } catch (error: any) {
+    console.error("Image generation error:", error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Failed to generate picture via Tyzenr API.",
+    });
+  }
+});
+
+// Endpoint to generate picture via new /ai/picture/url route
+app.post("/ai/picture/url", async (req, res) => {
+  const {
+    userPrompt,
+    url,
+    model,
+    aspectRatio,
+    subtitle,
+    watermark
+  } = req.body;
+
+  if (!url) {
+    return res.status(400).json({ success: false, error: "URL is required" });
+  }
+
+  // Reconstruct prompt from settings with parameters replaced
+  let replacedPrompt = userPrompt || "";
+  if (replacedPrompt) {
+    replacedPrompt = replacedPrompt
+      .replace(/{url}/g, url || "")
+      .replace(/{settings\.business\.name}/g, subtitle || "Your Biz")
+      .replace(/{settings\.watermark}/g, watermark || "Watermark")
+      .replace(/{company\.name}/g, subtitle || "Your Biz")
+      .replace(/{watermark}/g, watermark || "Watermark")
+      .replace(/{title}/g, "")
+      .replace(/{description}/g, "");
+  }
+
+  // Enforce padding for any text/headings/subheadings to prevent clipping on generated canvas edges
+  if (replacedPrompt) {
+    replacedPrompt += ". Ensure all visual text elements, headings, subheadings, and watermark details have generous padding and are safely away from the outer edges of the canvas to prevent any clipping or cutting off at the margins.";
+  }
+
+  console.log(`[New Picture API] Processing request for ${aspectRatio}. Replaced Prompt: "${replacedPrompt}"`);
+
+  try {
+    let retrievedUrl = "";
+    let base64ImageBytes = "";
+
+    // Invoke the Tyzenr API as requested
+    console.log(`[Tyzenr] Invoking POST https://webapi.tyzenr.com/ai/picture/url with aspect: ${aspectRatio || "9:16"}, model: ${model || "gpt"}, subtitle: ${subtitle || ""}`);
+    
+    const tyzenrResponse = await fetch("https://webapi.tyzenr.com/ai/picture/url", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        userPrompt: replacedPrompt,
+        url: url,
+        model: model || "gpt",
+        aspectRatio: aspectRatio || "9:16",
+        subtitle: subtitle || "",
+        watermark: watermark || ""
+      }),
+    });
+
+    console.log(`[Tyzenr] API returned status: ${tyzenrResponse.status}`);
+    
+    if (!tyzenrResponse.ok) {
+      const errText = await tyzenrResponse.text().catch(() => "");
+      throw new Error(`Tyzenr API returned status ${tyzenrResponse.status}: ${errText}`);
+    }
+
+    const contentType = tyzenrResponse.headers.get("content-type") || "";
+    if (contentType.includes("image")) {
+      const arrayBuffer = await tyzenrResponse.arrayBuffer();
+      base64ImageBytes = Buffer.from(arrayBuffer).toString("base64");
+      console.log("[Tyzenr] Successfully loaded binary image from API response!");
+    } else {
+      const text = await tyzenrResponse.text();
+      console.log("[Tyzenr] Response text:", text.slice(0, 800));
+      
+      const trimmedText = text.trim();
+      if (trimmedText.startsWith("http://") || trimmedText.startsWith("https://")) {
+        retrievedUrl = trimmedText;
+        console.log("[Tyzenr] Successfully captured raw URL response:", retrievedUrl);
+      } else {
+        try {
+          const data = JSON.parse(text);
+          const possibleUrl = data.pictureUrl || data.result || data.url || data.imageUrl || data.blobUrl || data.sasUrl || data.sasBlobUrl || data.link || (data.data && (data.data.url || data.data.imageUrl || data.data.blobUrl || data.data.sasUrl));
+          const possibleBase64 = data.base64 || data.b64_json || data.imageBytes || (data.data && (data.data.base64 || data.data.b64_json));
+
+          if (possibleUrl && typeof possibleUrl === "string") {
+            retrievedUrl = possibleUrl;
+            console.log("[Tyzenr] Successfully captured URL from JSON key:", retrievedUrl);
+          } else if (possibleBase64) {
+            base64ImageBytes = possibleBase64.replace(/^data:image\/[a-z]+;base64,/, "");
+            console.log("[Tyzenr] Successfully captured base64 bytes from JSON.");
+          } else {
+            const match = text.match(/https?:\/\/[^\s"']+/);
+            if (match) {
+              retrievedUrl = match[0];
+              console.log("[Tyzenr] Successfully matched URL pattern in JSON text:", retrievedUrl);
+            }
+          }
+        } catch (jsonErr) {
+          const match = text.match(/https?:\/\/[^\s"']+/);
+          if (match) {
+            retrievedUrl = match[0];
+            console.log("[Tyzenr] Successfully matched URL pattern in raw text response:", retrievedUrl);
+          }
+        }
+      }
+    }
+
+    if (retrievedUrl) {
+      return res.json({
+        success: true,
+        imageUrl: retrievedUrl,
+        azureUrl: retrievedUrl,
+        azureStatus: "Success (Linked via Tyzenr API)",
+        base64: "", 
+      });
+    }
+
     if (base64ImageBytes) {
       const filename = `boostin_${Date.now()}.png`;
       const localPath = path.join(publicImagesDir, filename);
