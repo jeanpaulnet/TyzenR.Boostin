@@ -147,7 +147,94 @@ app.post("/api/scan", async (req, res) => {
     const currentYear = new Date().getFullYear();
     const currentYearTag = `#${currentYear}`;
 
-    const prompt = `You are a social media copywriter and marketer.
+    let apiTitle = "";
+    let apiDescription = "";
+    let apiSucceeded = false;
+
+    // Call the external API: https://webapi.tyzenr.com/ai/summary/url
+    // with parameters model="gemini", url actual url, tags from settings (commonTags).
+    try {
+      console.log(`[Tyzenr API] Fetching summary from external API: https://webapi.tyzenr.com/ai/summary/url`);
+      const postBody = {
+        model: "gemini",
+        url: url,
+        tags: commonTags || ""
+      };
+      
+      let apiResponse = await fetch("https://webapi.tyzenr.com/ai/summary/url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        body: JSON.stringify(postBody),
+        signal: AbortSignal.timeout(10000) // 10 seconds timeout
+      });
+
+      if (!apiResponse.ok) {
+        console.warn(`[Tyzenr API] POST request failed with status: ${apiResponse.status}. Trying GET request...`);
+        // Fallback to GET request with query params
+        const queryParams = new URLSearchParams({
+          model: "gemini",
+          url: url,
+          tags: commonTags || ""
+        });
+        apiResponse = await fetch(`https://webapi.tyzenr.com/ai/summary/url?${queryParams.toString()}`, {
+          headers: { "Accept": "application/json" },
+          signal: AbortSignal.timeout(10000)
+        });
+      }
+
+      if (apiResponse.ok) {
+        const data = await apiResponse.json();
+        console.log("[Tyzenr API] Received response data:", JSON.stringify(data));
+        if (data && (data.title || data.description)) {
+          apiTitle = data.title || "";
+          apiDescription = data.description || "";
+          apiSucceeded = true;
+        }
+      } else {
+        console.error(`[Tyzenr API] Both POST and GET requests failed. Status: ${apiResponse.status}`);
+      }
+    } catch (apiError: any) {
+      console.error("[Tyzenr API] Failed to fetch from external API:", apiError?.message || apiError);
+    }
+
+    let finalTitle = "";
+    let finalDescription = "";
+    let finalImagePrompt = "";
+
+    if (apiSucceeded) {
+      console.log("[Tyzenr API] Successfully retrieved title and description from external API.");
+      finalTitle = apiTitle;
+      finalDescription = apiDescription;
+
+      // We still generate a descriptive image prompt conforming to the template based on the generated summary
+      try {
+        const prompt = `You are a creative visual prompt engineer.
+Analyze this article content and generate a highly descriptive visual prompt for generating an image that represents it.
+Article Title: ${finalTitle}
+Article Description: ${finalDescription}
+
+You MUST follow this exact frame instruction format for the output visual prompt:
+"${compiledPromptInstruction}"
+
+Expand on it with visual descriptions of the scene to summarize the content, but keep that exact frame instruction structure!
+Return the generated prompt as a plain text string.`;
+
+        const modelName = "gemini-3.5-flash";
+        const imagePromptResponse = await ai.models.generateContent({
+          model: modelName,
+          contents: prompt
+        });
+        finalImagePrompt = imagePromptResponse.text?.trim() || compiledPromptInstruction;
+      } catch (imgError) {
+        console.error("[Tyzenr API] Local Gemini image prompt generation failed, using fallback template:", imgError);
+        finalImagePrompt = compiledPromptInstruction;
+      }
+    } else {
+      console.log("[Tyzenr API] External API failed or was empty. Falling back to local Gemini generation...");
+      const prompt = `You are a social media copywriter and marketer.
 We are scanning a URL to generate a high-converting promotional post for social media platforms.
 
 Target URL: ${url}
@@ -184,27 +271,30 @@ Your output must be in valid JSON conforming to this schema:
 }
 Do not include any other text besides the JSON.`;
 
-    const modelName = "gemini-3.5-flash";
-    const response = await ai.models.generateContent({
-      model: modelName,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            title: { type: Type.STRING, description: "Engaging headline for the scanned content" },
-            description: { type: Type.STRING, description: "2-paragraph summary followed by More Info and hashtags" },
-            imagePrompt: { type: Type.STRING, description: "Descriptive image prompt conforming to the template" },
+      const modelName = "gemini-3.5-flash";
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING, description: "Engaging headline for the scanned content" },
+              description: { type: Type.STRING, description: "2-paragraph summary followed by More Info and hashtags" },
+              imagePrompt: { type: Type.STRING, description: "Descriptive image prompt conforming to the template" },
+            },
+            required: ["title", "description", "imagePrompt"],
           },
-          required: ["title", "description", "imagePrompt"],
         },
-      },
-    });
+      });
 
-    const parsedData = JSON.parse(response.text || "{}");
-    let finalDescription = parsedData.description || `Check this out! Summarizing content from ${url} #boostin #viral`;
-    
+      const parsedData = JSON.parse(response.text || "{}");
+      finalTitle = parsedData.title || fetchedTitle || "Amazing Discoveries";
+      finalDescription = parsedData.description || `Check this out! Summarizing content from ${url} #boostin #viral`;
+      finalImagePrompt = parsedData.imagePrompt || compiledPromptInstruction;
+    }
+
     // Normalize newlines and replace any consecutive newlines (double newlines) with a double newline (one empty line)
     finalDescription = finalDescription.replace(/\r\n/g, "\n").replace(/\n\n+/g, "\n\n");
 
@@ -226,9 +316,9 @@ Do not include any other text besides the JSON.`;
 
     return res.json({
       success: true,
-      title: parsedData.title || fetchedTitle || "Amazing Discoveries",
+      title: finalTitle || fetchedTitle || "Amazing Discoveries",
       description: finalDescription,
-      imagePrompt: parsedData.imagePrompt || compiledPromptInstruction,
+      imagePrompt: finalImagePrompt || compiledPromptInstruction,
     });
   } catch (error: any) {
     console.error("Gemini Scan Error:", error);
