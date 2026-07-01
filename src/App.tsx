@@ -325,7 +325,7 @@ export default function App() {
             serverErrorMsg = scanResponse.statusText;
           }
         }
-        throw new Error(`Server returned HTTP ${scanResponse.status}: ${serverErrorMsg}. Please check your server deployment and environment variables (specifically GEMINI_API_KEY).`);
+        throw new Error(`Server returned HTTP ${scanResponse.status}: ${serverErrorMsg}. Please check your server deployment and configuration.`);
       }
 
       let scanData;
