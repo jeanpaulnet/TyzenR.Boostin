@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Maximize2, Download, Copy, Check, Eye, ExternalLink, AlertCircle, Sparkles, History, Loader2, RefreshCw, Send } from "lucide-react";
 import { ScannedItem, Settings } from "../types";
+import { motion, AnimatePresence } from "motion/react";
 
 interface PreviewPaneProps {
   activeItem: ScannedItem | null;
@@ -59,72 +60,121 @@ export default function PreviewPane({
   const [showPublishToast, setShowPublishToast] = useState(false);
   const [publishedVersion, setPublishedVersion] = useState("");
   const [imageLoadErrors, setImageLoadErrors] = useState<Record<string, boolean>>({});
+  const [copiedHistoryIdx, setCopiedHistoryIdx] = useState<number | null>(null);
 
   const handleImageLoadError = (url: string) => {
     setImageLoadErrors((prev) => ({ ...prev, [url]: true }));
   };
 
-  const copyImageToClipboard = async (imgUrl: string) => {
+  const copyImageToClipboard = async (imgUrl: string): Promise<"image" | "url" | "failed"> => {
     try {
       const isExternal = imgUrl.startsWith("http://") || imgUrl.startsWith("https://");
       const finalUrl = isExternal 
         ? `/api/proxy-image?url=${encodeURIComponent(imgUrl)}`
         : imgUrl;
 
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-        img.src = finalUrl;
-      });
+      // 1. Try modern clipboard.write using Canvas (convert to PNG)
+      if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+        try {
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => reject(new Error("Image load timeout")), 8000);
+            img.onload = () => {
+              clearTimeout(timeout);
+              resolve(null);
+            };
+            img.onerror = () => {
+              clearTimeout(timeout);
+              reject(new Error("Image load failed"));
+            };
+            img.src = finalUrl;
+          });
 
-      const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("Could not get canvas context");
-      ctx.drawImage(img, 0, 0);
+          const canvas = document.createElement("canvas");
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) throw new Error("Could not get canvas context");
+          ctx.drawImage(img, 0, 0);
 
-      const blob = await new Promise<Blob | null>((resolve) => 
-        canvas.toBlob((b) => resolve(b), "image/png")
-      );
+          const blob = await new Promise<Blob | null>((resolve) => 
+            canvas.toBlob((b) => resolve(b), "image/png")
+          );
 
-      if (!blob) throw new Error("Canvas toBlob failed");
+          if (!blob) throw new Error("Canvas toBlob failed");
 
-      await navigator.clipboard.write([
-        new ClipboardItem({
-          [blob.type]: blob
-        })
-      ]);
-      return true;
-    } catch (err) {
-      console.error("Failed to copy image to clipboard via canvas:", err);
-      try {
-        const isExternal = imgUrl.startsWith("http://") || imgUrl.startsWith("https://");
-        const finalUrl = isExternal 
-          ? `/api/proxy-image?url=${encodeURIComponent(imgUrl)}`
-          : imgUrl;
-        const response = await fetch(finalUrl);
-        const blob = await response.blob();
-        await navigator.clipboard.write([
-          new ClipboardItem({
-            [blob.type]: blob
-          })
-        ]);
-        return true;
-      } catch (directErr) {
-        console.error("Direct write also failed:", directErr);
-        return false;
+          await navigator.clipboard.write([
+            new ClipboardItem({
+              [blob.type]: blob
+            })
+          ]);
+          return "image";
+        } catch (canvasErr) {
+          console.warn("Canvas-based image clipboard copy failed, attempting direct fetch copy:", canvasErr);
+        }
+
+        // 2. Try direct fetch & write as blob
+        try {
+          const response = await fetch(finalUrl);
+          const blob = await response.blob();
+          if (blob.type.includes("png")) {
+            await navigator.clipboard.write([
+              new ClipboardItem({
+                [blob.type]: blob
+              })
+            ]);
+            return "image";
+          }
+        } catch (directErr) {
+          console.warn("Direct blob clipboard copy failed:", directErr);
+        }
       }
+
+      // 3. Fallback to writing URL as text
+      const fallbackText = imgUrl.startsWith("data:") 
+        ? imgUrl 
+        : (imgUrl.startsWith("/") ? (window.location.origin + imgUrl) : imgUrl);
+
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(fallbackText);
+        return "url";
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = fallbackText;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-999999px";
+        textArea.style.top = "-999999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        const success = document.execCommand("copy");
+        document.body.removeChild(textArea);
+        if (success) return "url";
+      }
+
+      return "failed";
+    } catch (err) {
+      console.error("All copy to clipboard attempts failed:", err);
+      return "failed";
     }
   };
 
   const handleCopyImage = async (url: string, id: string) => {
-    const success = await copyImageToClipboard(url);
-    if (success) {
+    const result = await copyImageToClipboard(url);
+    if (result === "image") {
       setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 2000);
+      setTimeout(() => setCopiedId(null), 3000);
+    } else if (result === "url") {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 3000);
+      alert(
+        "Copying a live image directly is restricted by your browser's security/sandbox policy in this view.\n\n" +
+        "We have copied the Direct Image URL to your clipboard instead! You can easily paste it anywhere or open it in a new browser tab.\n\n" +
+        "Alternatively, you can right-click the image here and click 'Copy image'."
+      );
+    } else {
+      alert("Unable to copy the image or its URL. Please right-click the image and choose 'Copy image' or 'Save image as...' directly.");
     }
   };
 
@@ -491,11 +541,38 @@ export default function PreviewPane({
                           type="button"
                           onClick={() => {
                             navigator.clipboard.writeText(url);
+                            setCopiedHistoryIdx(index);
+                            setTimeout(() => setCopiedHistoryIdx(null), 2000);
                           }}
-                          className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-all"
+                          className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-all flex items-center justify-center min-w-[28px] min-h-[28px]"
                           title="Copy URL"
                         >
-                          <Copy className="w-3.5 h-3.5" />
+                          <AnimatePresence mode="wait" initial={false}>
+                            {copiedHistoryIdx === index ? (
+                              <motion.div
+                                key="check"
+                                initial={{ scale: 0, rotate: -45 }}
+                                animate={{ scale: 1, rotate: 0 }}
+                                exit={{ scale: 0, rotate: 45 }}
+                                transition={{ duration: 0.15 }}
+                                className="flex items-center justify-center"
+                              >
+                                <Check className="w-3.5 h-3.5 text-emerald-500" />
+                              </motion.div>
+                            ) : (
+                              <motion.div
+                                key="copy"
+                                initial={{ scale: 0 }}
+                                animate={{ scale: 1 }}
+                                exit={{ scale: 0 }}
+                                transition={{ duration: 0.15 }}
+                                whileTap={{ scale: 0.8 }}
+                                className="flex items-center justify-center"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
                         </button>
                         <a
                           href={url}
@@ -666,14 +743,35 @@ export default function PreviewPane({
                           <button
                             type="button"
                             onClick={() => handleCopyImage(activeItem.imageUrl, "1:1")}
-                            className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-emerald-600 transition-colors cursor-pointer"
+                            className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-emerald-600 transition-colors cursor-pointer flex items-center justify-center min-w-[26px] min-h-[26px]"
                             title="Copy to Clipboard"
                           >
-                            {copiedId === "1:1" ? (
-                              <Check className="w-3.5 h-3.5 text-emerald-600" />
-                            ) : (
-                              <Copy className="w-3.5 h-3.5" />
-                            )}
+                            <AnimatePresence mode="wait" initial={false}>
+                              {copiedId === "1:1" ? (
+                                <motion.div
+                                  key="check"
+                                  initial={{ scale: 0, rotate: -45 }}
+                                  animate={{ scale: 1, rotate: 0 }}
+                                  exit={{ scale: 0, rotate: 45 }}
+                                  transition={{ duration: 0.15 }}
+                                  className="flex items-center justify-center"
+                                >
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                </motion.div>
+                              ) : (
+                                <motion.div
+                                  key="copy"
+                                  initial={{ scale: 0 }}
+                                  animate={{ scale: 1 }}
+                                  exit={{ scale: 0 }}
+                                  transition={{ duration: 0.15 }}
+                                  whileTap={{ scale: 0.8 }}
+                                  className="flex items-center justify-center"
+                                >
+                                  <Copy className="w-3.5 h-3.5" />
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
                           </button>
                         )}
                         {activeItem.imageUrl && (
@@ -805,14 +903,35 @@ export default function PreviewPane({
                           <button
                             type="button"
                             onClick={() => handleCopyImage(activeItem.imageUrl169!, "16:9")}
-                            className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-emerald-600 transition-colors cursor-pointer"
+                            className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-emerald-600 transition-colors cursor-pointer flex items-center justify-center min-w-[26px] min-h-[26px]"
                             title="Copy to Clipboard"
                           >
-                            {copiedId === "16:9" ? (
-                              <Check className="w-3.5 h-3.5 text-emerald-600" />
-                            ) : (
-                              <Copy className="w-3.5 h-3.5" />
-                            )}
+                            <AnimatePresence mode="wait" initial={false}>
+                              {copiedId === "16:9" ? (
+                                <motion.div
+                                  key="check"
+                                  initial={{ scale: 0, rotate: -45 }}
+                                  animate={{ scale: 1, rotate: 0 }}
+                                  exit={{ scale: 0, rotate: 45 }}
+                                  transition={{ duration: 0.15 }}
+                                  className="flex items-center justify-center"
+                                >
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                </motion.div>
+                              ) : (
+                                <motion.div
+                                  key="copy"
+                                  initial={{ scale: 0 }}
+                                  animate={{ scale: 1 }}
+                                  exit={{ scale: 0 }}
+                                  transition={{ duration: 0.15 }}
+                                  whileTap={{ scale: 0.8 }}
+                                  className="flex items-center justify-center"
+                                >
+                                  <Copy className="w-3.5 h-3.5" />
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
                           </button>
                         )}
                         {activeItem.imageUrl169 && (

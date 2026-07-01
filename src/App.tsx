@@ -5,6 +5,20 @@ import LibraryPane from "./components/LibraryPane";
 import WorkPane from "./components/WorkPane";
 import PreviewPane from "./components/PreviewPane";
 import SettingsDialog from "./components/SettingsDialog";
+import versionInfo from "./version.json";
+
+function isVersionGreaterOrEqual(v1: string, v2: string): boolean {
+  const parse = (v: string) => v.replace(/^v/, "").split(".").map(x => parseInt(x, 10) || 0);
+  const p1 = parse(v1);
+  const p2 = parse(v2);
+  for (let i = 0; i < Math.max(p1.length, p2.length); i++) {
+    const num1 = p1[i] || 0;
+    const num2 = p2[i] || 0;
+    if (num1 > num2) return true;
+    if (num1 < num2) return false;
+  }
+  return true;
+}
 
 const DEFAULT_SETTINGS: Settings = {
   bizName: "Your Biz",
@@ -31,9 +45,13 @@ export default function App() {
   const [version, setVersion] = useState(() => {
     try {
       const saved = localStorage.getItem("boostin_version");
-      return saved || "2.0.4";
+      if (saved && isVersionGreaterOrEqual(saved, versionInfo.version)) {
+        return saved;
+      }
+      localStorage.setItem("boostin_version", versionInfo.version);
+      return versionInfo.version;
     } catch (_) {
-      return "2.0.4";
+      return versionInfo.version;
     }
   });
   
@@ -276,24 +294,47 @@ export default function App() {
     try {
       // Step 1: Scrape & Copywrite via Gemini
       setLoadingStep("scrape");
-      const scanResponse = await fetch("/api/scan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url,
-          bizName: settings.bizName,
-          website: settings.website,
-          watermark: settings.watermark,
-          promptTemplate: settings.promptTemplate,
-          commonTags: settings.commonTags,
-        }),
-      });
-
-      if (!scanResponse.ok) {
-        throw new Error("Target website could not be scanned. Please double-check the URL.");
+      let scanResponse;
+      try {
+        scanResponse = await fetch("/api/scan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url,
+            bizName: settings.bizName,
+            website: settings.website,
+            watermark: settings.watermark,
+            promptTemplate: settings.promptTemplate,
+            commonTags: settings.commonTags,
+          }),
+        });
+      } catch (networkErr: any) {
+        throw new Error(`Network error connection failed: ${networkErr.message || networkErr}. Please verify that the full-stack server is running and accessible.`);
       }
 
-      const scanData = await scanResponse.json();
+      if (!scanResponse.ok) {
+        let serverErrorMsg = "";
+        try {
+          const errJson = await scanResponse.json();
+          serverErrorMsg = errJson.error || errJson.message || JSON.stringify(errJson);
+        } catch (_) {
+          try {
+            const errText = await scanResponse.text();
+            serverErrorMsg = errText.substring(0, 150) || scanResponse.statusText;
+          } catch (__) {
+            serverErrorMsg = scanResponse.statusText;
+          }
+        }
+        throw new Error(`Server returned HTTP ${scanResponse.status}: ${serverErrorMsg}. Please check your server deployment and environment variables (specifically GEMINI_API_KEY).`);
+      }
+
+      let scanData;
+      try {
+        scanData = await scanResponse.json();
+      } catch (jsonErr: any) {
+        throw new Error(`Invalid response format from server (expected JSON, but parsing failed: ${jsonErr.message}). If you deployed to a static host, please ensure the backend Express server is running and correctly routing /api/ requests.`);
+      }
+
       if (!scanData.success) {
         throw new Error(scanData.error || "Webpage scanning returned an error.");
       }
@@ -370,6 +411,7 @@ export default function App() {
 
       saveItems(updated);
       setSelectedId(targetId);
+      handlePublish();
 
     } catch (err: any) {
       console.error(err);
@@ -552,6 +594,7 @@ export default function App() {
         localStorage.setItem("boostin_items", JSON.stringify(updated));
         return updated;
       });
+      handlePublish();
 
     } catch (err: any) {
       console.error(err);
@@ -684,6 +727,7 @@ export default function App() {
       });
 
       saveItems(updated);
+      handlePublish();
     } catch (err: any) {
       console.error(err);
       setImageError(err.message || `Failed to refresh ${aspectRatio} image.`);

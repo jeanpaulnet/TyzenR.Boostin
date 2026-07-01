@@ -144,6 +144,9 @@ app.post("/api/scan", async (req, res) => {
       .replace(/{company\.name}/g, bizName || "Your Biz")
       .replace(/{watermark}/g, watermark || "Watermark");
 
+    const currentYear = new Date().getFullYear();
+    const currentYearTag = `#${currentYear}`;
+
     const prompt = `You are a social media copywriter and marketer.
 We are scanning a URL to generate a high-converting promotional post for social media platforms.
 
@@ -165,6 +168,7 @@ Please analyze the URL and the content, and generate the following three outputs
    [Hashtags/Tags] (You MUST generate 3-5 highly relevant hashtags separated by spaces. Do NOT include any hashtag representing the business name "${bizName || "YourBiz"}" or its variation in the generated hashtags. Instead, the hashtags MUST include:
    - A hashtag for the industry/sector of the content (e.g. #Tech, #Healthcare, #RealEstate, #Fintech, #ECommerce, etc., inferred from the content)
    - A hashtag for the country or region associated with the article or company, or target market if applicable (e.g. #USA, #UK, #India, #Canada, #Global, etc., inferred from the content)
+   - A hashtag with the current year (MUST use ${currentYearTag})
    - 1-2 other trending, highly relevant, contextual keywords or hashtags
    - These common hashtags from settings MUST also be included at the end: ${commonTags || "#trending #news"})
 3. "imagePrompt": An optimized, highly descriptive visual prompt for generating a picture that summarizes the content of the article.
@@ -212,6 +216,11 @@ Do not include any other text besides the JSON.`;
       }
     }
 
+    // Programmatically ensure the current year tag is present
+    if (!finalDescription.toLowerCase().includes(currentYearTag.toLowerCase())) {
+      finalDescription += " " + currentYearTag;
+    }
+
     // Convert all hashtags inside finalDescription to lowercase
     finalDescription = finalDescription.replace(/#[a-zA-Z0-9_]+/g, (match) => match.toLowerCase());
 
@@ -225,13 +234,19 @@ Do not include any other text besides the JSON.`;
     console.error("Gemini Scan Error:", error);
     // Graceful fallback
     const fallbackTitle = fetchedTitle || "Article from " + new URL(url).hostname;
-    let fallbackDesc = `Check this out: ${fallbackTitle}\nRead more here: ${url}\n#trending #boostin`;
+    const currentYear = new Date().getFullYear();
+    const currentYearTag = `#${currentYear}`;
+    let fallbackDesc = `Check this out: ${fallbackTitle}\nRead more here: ${url}\n#trending #boostin ${currentYearTag}`;
     if (commonTags) {
       const tagsArray = commonTags.split(/\s+/).filter(Boolean);
       const missingTags = tagsArray.filter(tag => !fallbackDesc.toLowerCase().includes(tag.toLowerCase()));
       if (missingTags.length > 0) {
         fallbackDesc += " " + missingTags.join(" ");
       }
+    }
+
+    if (!fallbackDesc.toLowerCase().includes(currentYearTag.toLowerCase())) {
+      fallbackDesc += " " + currentYearTag;
     }
 
     // Convert all hashtags inside fallbackDesc to lowercase
@@ -361,7 +376,7 @@ app.post("/api/generate-image", async (req, res) => {
 
   // Enforce padding for any text/headings/subheadings to prevent clipping on generated canvas edges
   if (replacedPrompt) {
-    replacedPrompt += ". Ensure all visual text elements, headings, subheadings, and watermark details have generous padding and are safely away from the outer edges of the canvas to prevent any clipping or cutting off at the margins.";
+    replacedPrompt += ". Ensure all visual text elements, headings, subheadings, and watermark details have generous padding and are safely away from the outer edges of the canvas to prevent any clipping or cutting off at the margins. Any watermark must be styled in a subtle light grey font color, with a small size 10 equivalent font, positioned elegantly in the lower area of the image.";
   }
 
   console.log(`[Tyzenr] Processing request. Replaced Prompt: "${replacedPrompt}"`);
@@ -512,7 +527,7 @@ app.post("/ai/picture/url", async (req, res) => {
 
   // Enforce padding for any text/headings/subheadings to prevent clipping on generated canvas edges
   if (replacedPrompt) {
-    replacedPrompt += ". Ensure all visual text elements, headings, subheadings, and watermark details have generous padding and are safely away from the outer edges of the canvas to prevent any clipping or cutting off at the margins.";
+    replacedPrompt += ". Ensure all visual text elements, headings, subheadings, and watermark details have generous padding and are safely away from the outer edges of the canvas to prevent any clipping or cutting off at the margins. Any watermark must be styled in a subtle light grey font color, with a small size 10 equivalent font, positioned elegantly in the lower area of the image.";
   }
 
   console.log(`[New Picture API] Processing request for ${aspectRatio}. Replaced Prompt: "${replacedPrompt}"`);

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link2, Sparkles, Check, Copy, Image, RotateCw } from "lucide-react";
 import { Settings } from "../types";
+import { motion, AnimatePresence } from "motion/react";
 
 interface WorkPaneProps {
   onScan: (url: string, model: string, aspectRatio: string) => Promise<void>;
@@ -209,19 +210,36 @@ export default function WorkPane({
                 <button
                   type="button"
                   onClick={() => copyToClipboard(scannedDescription, "desc")}
-                  className="text-[11px] text-indigo-600 hover:text-indigo-800 flex items-center gap-1 transition-all font-semibold"
+                  className="text-[11px] text-indigo-600 hover:text-indigo-800 flex items-center gap-1 transition-all font-semibold min-h-[24px]"
                 >
-                  {copiedDesc ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-600" />
-                      <span className="text-emerald-600 font-bold">Copied!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>Copy Caption</span>
-                    </>
-                  )}
+                  <AnimatePresence mode="wait" initial={false}>
+                    {copiedDesc ? (
+                      <motion.span
+                        key="copied"
+                        initial={{ scale: 0.8, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0.8, opacity: 0 }}
+                        transition={{ duration: 0.15 }}
+                        className="flex items-center gap-1"
+                      >
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="text-emerald-600 font-bold">Copied!</span>
+                      </motion.span>
+                    ) : (
+                      <motion.span
+                        key="copy"
+                        initial={{ scale: 0.8, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0.8, opacity: 0 }}
+                        transition={{ duration: 0.15 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="flex items-center gap-1"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy Caption</span>
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
                 </button>
               )}
             </div>
