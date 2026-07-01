@@ -9,7 +9,7 @@ export interface ScannedItem {
   azureStatus: string;
   model: string;
   aspectRatio: string;
-  resolution: string;
+  resolution?: string;
   timestamp: number;
   pastImageUrls?: string[];
   imageUrl916?: string;

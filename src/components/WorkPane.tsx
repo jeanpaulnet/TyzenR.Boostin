@@ -3,7 +3,7 @@ import { Link2, Sparkles, Check, Copy, Image, RotateCw } from "lucide-react";
 import { Settings } from "../types";
 
 interface WorkPaneProps {
-  onScan: (url: string, model: string, aspectRatio: string, resolution: string) => Promise<void>;
+  onScan: (url: string, model: string, aspectRatio: string) => Promise<void>;
   isLoading: boolean;
   loadingStep: string;
   scannedTitle: string;
@@ -13,7 +13,6 @@ interface WorkPaneProps {
   settings: Settings;
   model: string;
   aspectRatio: string;
-  resolution: string;
   activeItemUrl?: string;
 }
 
@@ -28,7 +27,6 @@ export default function WorkPane({
   settings,
   model,
   aspectRatio,
-  resolution,
   activeItemUrl = "",
 }: WorkPaneProps) {
   const [url, setUrl] = useState("");
@@ -58,7 +56,7 @@ export default function WorkPane({
       return;
     }
 
-    await onScan(url, model, aspectRatio, resolution);
+    await onScan(url, model, aspectRatio);
   };
 
   const copyToClipboard = (text: string, type: "desc" | "prompt") => {

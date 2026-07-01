@@ -32,7 +32,6 @@ export default function App() {
   // Model & Parameter States (Shared between components)
   const [model, setModel] = useState("gpt");
   const [aspectRatio, setAspectRatio] = useState("1:1");
-  const [resolution, setResolution] = useState("1K");
 
   // Loading Pipeline States
   const [isLoading, setIsLoading] = useState(false);
@@ -60,7 +59,6 @@ export default function App() {
           setScannedPrompt(parsed[0].imagePrompt);
           setModel(parsed[0].model || "gpt");
           setAspectRatio("1:1");
-          setResolution("1K");
         }
       }
     } catch (e) {
@@ -84,9 +82,49 @@ export default function App() {
   };
 
   // Save settings to LocalStorage
-  const handleSaveSettings = (newSettings: Settings) => {
+  const handleSaveSettings = async (newSettings: Settings) => {
     setSettings(newSettings);
     localStorage.setItem("boostin_settings", JSON.stringify(newSettings));
+
+    // If an item is selected, call the prompt-regeneration endpoint
+    // to dynamically derive a new prompt using the updated settings
+    if (selectedId) {
+      const activeItem = items.find((item) => item.id === selectedId);
+      if (activeItem) {
+        try {
+          const res = await fetch("/api/regenerate-prompt", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              url: activeItem.url,
+              title: activeItem.title,
+              description: activeItem.description,
+              bizName: newSettings.bizName,
+              watermark: newSettings.watermark,
+              promptTemplate: newSettings.promptTemplate,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && data.imagePrompt) {
+              setScannedPrompt(data.imagePrompt);
+              const updated = items.map((item) => {
+                if (item.id === selectedId) {
+                  return {
+                    ...item,
+                    imagePrompt: data.imagePrompt,
+                  };
+                }
+                return item;
+              });
+              saveItems(updated);
+            }
+          }
+        } catch (err) {
+          console.error("Failed to dynamically update image prompt with new settings:", err);
+        }
+      }
+    }
   };
 
   const cleanDescription = (desc: string): string => {
@@ -106,7 +144,6 @@ export default function App() {
     setScannedPrompt(item.imagePrompt);
     setModel(item.model || "gpt");
     setAspectRatio("1:1");
-    setResolution("1K");
   };
 
   // Deleting an item
@@ -172,7 +209,7 @@ export default function App() {
   };
 
   // The Primary Scan Trigger
-  const handleScan = async (url: string, model: string, aspectRatio: string, resolution: string) => {
+  const handleScan = async (url: string, model: string, aspectRatio: string) => {
     setIsLoading(true);
     setLoadingStep("scrape");
     setImageError(null);
@@ -234,7 +271,6 @@ export default function App() {
           imagePrompt: scanData.imagePrompt,
           model,
           aspectRatio,
-          resolution,
           timestamp: Date.now(),
         };
         // Remove from current position and prepend to the top
@@ -263,7 +299,6 @@ export default function App() {
           azureStatus11: "Not Generated",
           model,
           aspectRatio,
-          resolution,
           timestamp: Date.now(),
           pastImageUrls: [],
         };
@@ -283,7 +318,7 @@ export default function App() {
   };
 
   // Re-run Image Generation only (if they modified the custom prompt or settings)
-  const handleRegenerateImage = async (prompt: string, initialModel: string, aspectRatio: string, resolution: string) => {
+  const handleRegenerateImage = async (prompt: string, initialModel: string, aspectRatio: string) => {
     if (!selectedId) return;
     setIsGeneratingImage(true);
     setLoadingStep("image");
@@ -293,93 +328,137 @@ export default function App() {
       const activeItem = items.find((item) => item.id === selectedId);
       if (!activeItem) throw new Error("No active URL item selected to regenerate image for");
 
-      let currentModel = initialModel;
-      let imageResponse = await fetch("/ai/picture/url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userPrompt: prompt,
-          url: activeItem.url,
-          model: currentModel,
-          aspectRatio: "1:1",
-          subtitle: settings.bizName,
-          watermark: settings.watermark,
-        }),
-      });
-
-      if (imageResponse.status === 500) {
-        const fallbackModel = currentModel === "gpt" ? "gemini" : "gpt";
-        console.warn(`[Auto-Switch] Status 500. Retrying generation with fallback model: ${fallbackModel}`);
-        setModel(fallbackModel);
-        currentModel = fallbackModel;
-
-        imageResponse = await fetch("/ai/picture/url", {
+      const generateSingleAspect = async (aspect: "1:1" | "16:9") => {
+        let currentModel = initialModel;
+        const promptToUse = aspect === "16:9" ? settings.detailedPromptTemplate : settings.promptTemplate;
+        let imageResponse = await fetch("/ai/picture/url", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            userPrompt: prompt,
+            userPrompt: promptToUse,
             url: activeItem.url,
             model: currentModel,
-            aspectRatio: "1:1",
+            aspectRatio: aspect,
             subtitle: settings.bizName,
             watermark: settings.watermark,
           }),
         });
-      }
 
-      let imageUrl = "";
-      let azureUrl = "";
-      let azureStatus = "Not Generated";
+        if (imageResponse.status === 500) {
+          const fallbackModel = currentModel === "gpt" ? "gemini" : "gpt";
+          console.warn(`[Auto-Switch] Status 500. Retrying ${aspect} generation with fallback model: ${fallbackModel}`);
+          setModel(fallbackModel);
+          currentModel = fallbackModel;
 
-      if (!imageResponse.ok) {
-        const errorData = await imageResponse.json().catch(() => ({}));
-        console.warn("1:1 image regeneration failed:", errorData.error);
-        setImageError(errorData.error || "1:1 image generation pipeline failed");
-      } else {
+          imageResponse = await fetch("/ai/picture/url", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userPrompt: promptToUse,
+              url: activeItem.url,
+              model: currentModel,
+              aspectRatio: aspect,
+              subtitle: settings.bizName,
+              watermark: settings.watermark,
+            }),
+          });
+        }
+
+        if (!imageResponse.ok) {
+          const errorData = await imageResponse.json().catch(() => ({}));
+          throw new Error(errorData.error || `${aspect} image generation pipeline failed`);
+        }
+
         const imageData = await imageResponse.json();
-        if (imageData.success) {
-          imageUrl = imageData.imageUrl;
-          azureUrl = imageData.azureUrl;
-          azureStatus = imageData.azureStatus || "Success";
-        } else {
-          console.warn("1:1 image regeneration failed:", imageData.error);
-          setImageError(imageData.error || "1:1 Image asset creation pipeline error");
+        if (!imageData.success) {
+          throw new Error(imageData.error || `${aspect} Image asset creation pipeline error`);
         }
-      }
 
-      // Update current selected item
-      const updated = items.map((item) => {
-        if (item.id === selectedId) {
-          const newPast = [...(item.pastImageUrls || [])];
-          if (item.imageUrl && !newPast.includes(item.imageUrl)) {
-            newPast.push(item.imageUrl);
-          }
-          if (imageUrl && !newPast.includes(imageUrl)) {
-            newPast.push(imageUrl);
-          }
+        return imageData;
+      };
 
-          return {
-            ...item,
-            imagePrompt: prompt,
-            imageUrl: imageUrl || item.imageUrl,
-            azureUrl: azureUrl || item.azureUrl,
-            azureStatus: azureStatus !== "Not Generated" ? azureStatus : item.azureStatus,
-            imageUrl11: imageUrl || item.imageUrl11,
-            azureUrl11: azureUrl || item.azureUrl11,
-            azureStatus11: azureStatus !== "Not Generated" ? azureStatus : item.azureStatus11,
-            // Clear other aspects if we are locked to 1:1 now
-            imageUrl916: "",
-            imageUrl169: "",
-            model: currentModel,
-            aspectRatio: "1:1",
-            resolution,
-            pastImageUrls: newPast,
-          };
-        }
-        return item;
+      // Launch 1:1 immediately
+      const promise11 = generateSingleAspect("1:1");
+
+      // Delay by 1 second before launching 16:9, but let them execute in parallel
+      const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+      const promise169 = delay(1000).then(() => generateSingleAspect("16:9"));
+
+      // Let them run in parallel. Catch individual failures gracefully to allow one to succeed even if the other fails.
+      const [res11, res169] = await Promise.all([
+        promise11.catch((err) => {
+          console.error("1:1 Generation failed:", err);
+          setImageError((prev) => prev ? `${prev} | 1:1 failed: ${err.message}` : `1:1 failed: ${err.message}`);
+          return null;
+        }),
+        promise169.catch((err) => {
+          console.error("16:9 Generation failed:", err);
+          setImageError((prev) => prev ? `${prev} | 16:9 failed: ${err.message}` : `16:9 failed: ${err.message}`);
+          return null;
+        }),
+      ]);
+
+      // Safely update the list using functional state modifier to prevent race conditions
+      setItems((prevItems) => {
+        const updated = prevItems.map((item) => {
+          if (item.id === selectedId) {
+            const newPast = [...(item.pastImageUrls || [])];
+
+            let imageUrl = item.imageUrl;
+            let azureUrl = item.azureUrl;
+            let azureStatus = item.azureStatus;
+            let imageUrl11 = item.imageUrl11;
+            let azureUrl11 = item.azureUrl11;
+            let azureStatus11 = item.azureStatus11;
+            let imageUrl169 = item.imageUrl169;
+            let azureUrl169 = item.azureUrl169;
+            let azureStatus169 = item.azureStatus169;
+
+            if (res11) {
+              imageUrl = res11.imageUrl;
+              azureUrl = res11.azureUrl;
+              azureStatus = res11.azureStatus || "Success";
+              imageUrl11 = res11.imageUrl;
+              azureUrl11 = res11.azureUrl;
+              azureStatus11 = res11.azureStatus || "Success";
+
+              if (imageUrl && !newPast.includes(imageUrl)) {
+                newPast.push(imageUrl);
+              }
+            }
+
+            if (res169) {
+              imageUrl169 = res169.imageUrl;
+              azureUrl169 = res169.azureUrl;
+              azureStatus169 = res169.azureStatus || "Success";
+
+              if (imageUrl169 && !newPast.includes(imageUrl169)) {
+                newPast.push(imageUrl169);
+              }
+            }
+
+            return {
+              ...item,
+              imagePrompt: prompt,
+              imageUrl,
+              azureUrl,
+              azureStatus,
+              imageUrl11,
+              azureUrl11,
+              azureStatus11,
+              imageUrl169,
+              azureUrl169,
+              azureStatus169,
+              model: initialModel,
+              pastImageUrls: newPast,
+            };
+          }
+          return item;
+        });
+
+        localStorage.setItem("boostin_items", JSON.stringify(updated));
+        return updated;
       });
-
-      saveItems(updated);
 
     } catch (err: any) {
       console.error(err);
@@ -398,7 +477,7 @@ export default function App() {
       const activeItem = items.find((item) => item.id === selectedId);
       if (!activeItem) throw new Error("No active URL item selected to regenerate image for");
 
-      const promptTemplate = activeItem.imagePrompt || settings.promptTemplate;
+      const promptTemplate = aspectRatio === "16:9" ? settings.detailedPromptTemplate : settings.promptTemplate;
 
       let currentModel = model;
       let response = await fetch("/ai/picture/url", {
@@ -457,9 +536,9 @@ export default function App() {
 
           return {
             ...item,
-            imageUrl: imageUrl || item.imageUrl,
-            azureUrl: azureUrl || item.azureUrl,
-            azureStatus: azureStatus,
+            imageUrl: aspectRatio === "1:1" ? (imageUrl || item.imageUrl) : item.imageUrl,
+            azureUrl: aspectRatio === "1:1" ? (azureUrl || item.azureUrl) : item.azureUrl,
+            azureStatus: aspectRatio === "1:1" ? azureStatus : item.azureStatus,
             imageUrl11: aspectRatio === "1:1" ? (imageUrl || item.imageUrl11) : item.imageUrl11,
             azureUrl11: aspectRatio === "1:1" ? (azureUrl || item.azureUrl11) : item.azureUrl11,
             azureStatus11: aspectRatio === "1:1" ? azureStatus : item.azureStatus11,
@@ -559,7 +638,6 @@ export default function App() {
               settings={settings}
               model={model}
               aspectRatio={aspectRatio}
-              resolution={resolution}
               activeItemUrl={getActiveItem()?.url || ""}
             />
           </div>
@@ -574,8 +652,6 @@ export default function App() {
               setModel={setModel}
               aspectRatio={aspectRatio}
               setAspectRatio={setAspectRatio}
-              resolution={resolution}
-              setResolution={setResolution}
               scannedPrompt={scannedPrompt}
               onRegenerateImage={handleRegenerateImage}
               onUpdateScannedFields={handleUpdateScannedFields}

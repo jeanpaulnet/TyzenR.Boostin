@@ -11,11 +11,16 @@ interface PreviewPaneProps {
   setModel: (val: string) => void;
   aspectRatio: string;
   setAspectRatio: (val: string) => void;
-  resolution: string;
-  setResolution: (val: string) => void;
   scannedPrompt: string;
-  onRegenerateImage: (prompt: string, model: string, aspectRatio: string, resolution: string) => Promise<void>;
-  onUpdateScannedFields: (fields: { title?: string; description?: string; prompt?: string; imageUrl?: string }) => void;
+  onRegenerateImage: (prompt: string, model: string, aspectRatio: string) => Promise<void>;
+  onUpdateScannedFields: (fields: { 
+    title?: string; 
+    description?: string; 
+    prompt?: string; 
+    imageUrl?: string;
+    imageUrl916?: string;
+    imageUrl169?: string;
+  }) => void;
   settings: Settings;
   imageError?: string | null;
   setImageError?: (val: string | null) => void;
@@ -31,8 +36,6 @@ export default function PreviewPane({
   setModel,
   aspectRatio,
   setAspectRatio,
-  resolution,
-  setResolution,
   scannedPrompt,
   onRegenerateImage,
   onUpdateScannedFields,
@@ -205,7 +208,7 @@ export default function PreviewPane({
 
   const handleGenClick = async () => {
     if (!scannedPrompt) return;
-    await onRegenerateImage(scannedPrompt, model, aspectRatio, resolution);
+    await onRegenerateImage(scannedPrompt, model, aspectRatio);
   };
 
   // Helper to resolve Tailwind aspect ratios
@@ -484,12 +487,12 @@ export default function PreviewPane({
             </div>
           </div>
         ) : activeItem ? (
-          (activeItem.imageUrl916 || activeItem.imageUrl169) ? (
+          (activeItem.imageUrl || activeItem.imageUrl169) ? (
             <div className="w-full flex flex-col items-center space-y-6">
-              {/* 9:16 Image Display */}
-              {activeItem.imageUrl916 && (
+              {/* 1:1 Square Image Display */}
+              {activeItem.imageUrl && (
                 <div className="w-full flex flex-col items-center space-y-2 animate-fade-in pb-2">
-                  <div className="flex items-center justify-between w-full max-w-[200px] px-1">
+                  <div className="flex items-center justify-between w-full max-w-[300px] px-1">
                     <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider font-mono">
                       1:1 Square
                     </span>
@@ -497,24 +500,24 @@ export default function PreviewPane({
                       Square
                     </span>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 w-full justify-center">
                     <div 
-                      className="relative overflow-hidden rounded-xl shadow-lg border border-slate-200 bg-slate-950 transition-all duration-300 cursor-pointer hover:border-indigo-400 w-[200px] aspect-[9/16] flex-shrink-0"
-                      onClick={() => setFullscreenImgUrl(activeItem.imageUrl916 || null)}
+                      className="relative overflow-hidden rounded-xl shadow-xl border border-slate-200 bg-slate-950 transition-all duration-300 cursor-pointer hover:border-indigo-400 w-full max-w-[300px] aspect-square"
+                      onClick={() => setFullscreenImgUrl(activeItem.imageUrl)}
                       title="Click to view fullscreen"
                     >
                       <img
-                        src={activeItem.imageUrl916}
-                        alt={`${activeItem.title || "Branded Visual"} - 9:16`}
+                        src={activeItem.imageUrl}
+                        alt={`${activeItem.title || "Branded Visual"} - 1:1`}
                         className="w-full h-full object-contain"
                         referrerPolicy="no-referrer"
                       />
                     </div>
-                    {/* Compact actions block to the right - Gen / Refresh, Fullscreen, and Download buttons */}
-                    <div className="flex flex-col gap-1.5 p-1 bg-slate-50 rounded-lg border border-slate-200">
+                    {/* Compact actions block to the right */}
+                    <div className="flex flex-col gap-1.5 p-1 bg-slate-50 rounded-lg border border-slate-200 self-center">
                       <button
                         type="button"
-                        onClick={() => setFullscreenImgUrl(activeItem.imageUrl916 || null)}
+                        onClick={() => setFullscreenImgUrl(activeItem.imageUrl)}
                         className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
                         title="View Fullscreen"
                       >
@@ -522,91 +525,105 @@ export default function PreviewPane({
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleDownloadSpecific(activeItem.imageUrl916!, "-9_16")}
+                        onClick={() => onRefreshSingleImage?.("1:1")}
+                        disabled={refreshingAspect !== null || isLoading}
+                        className="p-1.5 hover:bg-red-50 rounded text-red-400 hover:text-red-600 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="Generate Again / Refresh (Gen)"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${refreshingAspect === "1:1" ? "animate-spin text-red-500" : ""}`} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyImage(activeItem.imageUrl, "1:1")}
+                        className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-emerald-600 transition-colors cursor-pointer"
+                        title="Copy to Clipboard"
+                      >
+                        {copiedId === "1:1" ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadSpecific(activeItem.imageUrl, "-1_1")}
                         className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
                         title="Download Picture"
                       >
                         <Download className="w-3.5 h-3.5" />
                       </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 16:9 Landscape Image Display */}
+              {activeItem.imageUrl169 && (
+                <div className="w-full flex flex-col items-center space-y-2 animate-fade-in pt-4 border-t border-slate-100">
+                  <div className="flex items-center justify-between w-full max-w-[360px] px-1">
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider font-mono">
+                      16:9 Landscape
+                    </span>
+                    <span className="text-[9px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-bold font-mono">
+                      Landscape
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 w-full justify-center">
+                    <div 
+                      className="relative overflow-hidden rounded-xl shadow-xl border border-slate-200 bg-slate-950 transition-all duration-300 cursor-pointer hover:border-indigo-400 w-full max-w-[360px] aspect-[16/9]"
+                      onClick={() => setFullscreenImgUrl(activeItem.imageUrl169 || null)}
+                      title="Click to view fullscreen"
+                    >
+                      <img
+                        src={activeItem.imageUrl169}
+                        alt={`${activeItem.title || "Branded Visual"} - 16:9`}
+                        className="w-full h-full object-contain"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+                    {/* Compact actions block to the right */}
+                    <div className="flex flex-col gap-1.5 p-1 bg-slate-50 rounded-lg border border-slate-200 self-center">
                       <button
                         type="button"
-                        onClick={() => onRefreshSingleImage?.("9:16")}
+                        onClick={() => setFullscreenImgUrl(activeItem.imageUrl169 || null)}
+                        className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
+                        title="View Fullscreen"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onRefreshSingleImage?.("16:9")}
                         disabled={refreshingAspect !== null || isLoading}
-                        className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="p-1.5 hover:bg-red-50 rounded text-red-400 hover:text-red-600 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                         title="Generate Again / Refresh (Gen)"
                       >
-                        <RefreshCw className={`w-3.5 h-3.5 ${refreshingAspect === "9:16" ? "animate-spin text-indigo-600" : ""}`} />
+                        <RefreshCw className={`w-3.5 h-3.5 ${refreshingAspect === "16:9" ? "animate-spin text-red-500" : ""}`} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyImage(activeItem.imageUrl169!, "16:9")}
+                        className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-emerald-600 transition-colors cursor-pointer"
+                        title="Copy to Clipboard"
+                      >
+                        {copiedId === "16:9" ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadSpecific(activeItem.imageUrl169!, "-16_9")}
+                        className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
+                        title="Download Picture"
+                      >
+                        <Download className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
                 </div>
               )}
-            </div>
-          ) : activeItem.imageUrl ? (
-            <div className="w-full flex flex-col items-center space-y-2 animate-fade-in">
-              <div className="flex items-center justify-between w-full max-w-[300px] px-1">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider font-mono">
-                  1:1 Square
-                </span>
-                <span className="text-[9px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-bold font-mono">
-                  Square
-                </span>
-              </div>
-              <div className="flex items-center gap-3 w-full justify-center">
-                {/* Styled Preview Frame (Legacy Fallback / 1:1) */}
-                <div 
-                  className={`relative overflow-hidden rounded-xl shadow-xl border border-slate-200 bg-slate-950 transition-all duration-300 cursor-pointer hover:border-indigo-400 ${getAspectRatioClass(aspectRatio)}`}
-                  onClick={() => setFullscreenImgUrl(activeItem.imageUrl)}
-                  title="Click to view fullscreen"
-                >
-                  <img
-                    src={activeItem.imageUrl}
-                    alt={activeItem.title}
-                    className="w-full h-full object-contain"
-                    referrerPolicy="no-referrer"
-                  />
-                </div>
-                {/* Compact actions block to the right */}
-                <div className="flex flex-col gap-1.5 p-1 bg-slate-50 rounded-lg border border-slate-200 self-center">
-                  <button
-                    type="button"
-                    onClick={() => setFullscreenImgUrl(activeItem.imageUrl)}
-                    className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
-                    title="View Fullscreen"
-                  >
-                    <Maximize2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleCopyImage(activeItem.imageUrl, "fallback")}
-                    className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-emerald-600 transition-colors cursor-pointer"
-                    title="Copy to Clipboard"
-                  >
-                    {copiedId === "fallback" ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-600" />
-                    ) : (
-                      <Copy className="w-3.5 h-3.5" />
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDownloadSpecific(activeItem.imageUrl, "")}
-                    className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
-                    title="Download Picture"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onRefreshSingleImage?.("1:1")}
-                    disabled={refreshingAspect !== null || isLoading}
-                    className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                    title="Generate Again / Refresh (Gen)"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${refreshingAspect === "1:1" ? "animate-spin text-indigo-600" : ""}`} />
-                  </button>
-                </div>
-              </div>
             </div>
           ) : (
             <div className="text-center p-6 flex flex-col items-center">
@@ -615,7 +632,7 @@ export default function PreviewPane({
               </div>
               <p className="text-xs font-bold text-slate-700 font-display">Metadata & Copy Scanned</p>
               <p className="text-[10px] text-slate-500 max-w-[220px] mt-1 leading-relaxed">
-                The article has been successfully scanned. Click the <span className="font-bold text-indigo-600">"Gen"</span> button at the top to generate its custom-branded picture.
+                The article has been successfully scanned. Click the <span className="font-bold text-indigo-600">"Gen"</span> button at the top to generate its custom-branded pictures (1:1 and 16:9).
               </p>
             </div>
           )

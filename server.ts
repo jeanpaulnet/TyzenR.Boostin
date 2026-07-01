@@ -233,13 +233,83 @@ Do not include any other text besides the JSON.`;
   }
 });
 
+// Endpoint to regenerate only the image prompt when settings change
+app.post("/api/regenerate-prompt", async (req, res) => {
+  const { url, title, description, bizName, watermark, promptTemplate } = req.body;
+
+  if (!url) {
+    return res.status(400).json({ success: false, error: "URL is required" });
+  }
+
+  try {
+    const template = promptTemplate || "create an ultra-realistic corporate financial like detailed picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle '{settings.business.name}' on bottom with watermark '{settings.watermark}' below it.";
+    const compiledPromptInstruction = template
+      .replace(/{url}/g, url || "")
+      .replace(/{settings\.business\.name}/g, bizName || "Your Biz")
+      .replace(/{settings\.watermark}/g, watermark || "Watermark")
+      .replace(/{company\.name}/g, bizName || "Your Biz")
+      .replace(/{watermark}/g, watermark || "Watermark")
+      .replace(/{title}/g, title || "")
+      .replace(/{description}/g, description || "");
+
+    const prompt = `You are a creative prompt engineer.
+We have a scanned webpage with:
+URL: ${url}
+Title: ${title}
+Description: ${description}
+
+Please generate an optimized, highly descriptive image generation prompt based on these details.
+Follow this exact instruction format:
+"${compiledPromptInstruction}"
+(You should add rich visual descriptions of the scene to summarize the content, but keep that exact frame instruction intact!)
+
+Response format: Return a JSON object with a single key "imagePrompt". Do not include any other text besides JSON.`;
+
+    const modelName = "gemini-3.5-flash";
+    const response = await ai.models.generateContent({
+      model: modelName,
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            imagePrompt: { type: Type.STRING, description: "The optimized descriptive image prompt" }
+          },
+          required: ["imagePrompt"]
+        }
+      }
+    });
+
+    const parsedData = JSON.parse(response.text || "{}");
+    return res.json({
+      success: true,
+      imagePrompt: parsedData.imagePrompt || compiledPromptInstruction
+    });
+  } catch (error: any) {
+    console.error("Prompt regeneration error:", error);
+    // Fallback
+    const fallbackPrompt = (promptTemplate || "")
+      .replace(/{url}/g, url || "")
+      .replace(/{settings\.business\.name}/g, bizName || "Your Biz")
+      .replace(/{settings\.watermark}/g, watermark || "Watermark")
+      .replace(/{company\.name}/g, bizName || "Your Biz")
+      .replace(/{watermark}/g, watermark || "Watermark")
+      .replace(/{title}/g, title || "")
+      .replace(/{description}/g, description || "");
+    return res.json({
+      success: true,
+      imagePrompt: fallbackPrompt
+    });
+  }
+});
+
 // Endpoint to generate image
 app.post("/api/generate-image", async (req, res) => {
   const { 
     prompt, 
     model, 
     aspectRatio, 
-    resolution, 
     azureConfig,
     promptTemplate,
     bizName,
@@ -278,7 +348,7 @@ app.post("/api/generate-image", async (req, res) => {
     let base64ImageBytes = "";
 
     // Invoke the Tyzenr API as requested
-    console.log(`[Tyzenr] Invoking POST https://webapi.tyzenr.com/picture/create with aspect: ${aspectRatio || "1:1"}, res: ${resolution || "1K"}, model: ${model || "gpt"}, title: ${title || ""}, subtitle: ${bizName || ""}`);
+    console.log(`[Tyzenr] Invoking POST https://webapi.tyzenr.com/picture/create with aspect: ${aspectRatio || "1:1"}, model: ${model || "gpt"}, title: ${title || ""}, subtitle: ${bizName || ""}`);
     
     const tyzenrResponse = await fetch("https://webapi.tyzenr.com/picture/create", {
       method: "POST",
@@ -288,7 +358,6 @@ app.post("/api/generate-image", async (req, res) => {
       body: JSON.stringify({
         prompt: replacedPrompt,
         aspectRatio: aspectRatio || "1:1",
-        resolution: resolution || "1K",
         model: model || "gpt",
         title: title || "",
         subtitle: bizName || ""
@@ -426,7 +495,7 @@ app.post("/ai/picture/url", async (req, res) => {
     let base64ImageBytes = "";
 
     // Invoke the Tyzenr API as requested
-    console.log(`[Tyzenr] Invoking POST https://webapi.tyzenr.com/ai/picture/url with aspect: ${aspectRatio || "9:16"}, model: ${model || "gpt"}, subtitle: ${subtitle || ""}`);
+    console.log(`[Tyzenr] Invoking POST https://webapi.tyzenr.com/ai/picture/url with aspect: ${aspectRatio || "1:1"}, model: ${model || "gpt"}, subtitle: ${subtitle || ""}`);
     
     const tyzenrResponse = await fetch("https://webapi.tyzenr.com/ai/picture/url", {
       method: "POST",
@@ -437,7 +506,7 @@ app.post("/ai/picture/url", async (req, res) => {
         userPrompt: replacedPrompt,
         url: url,
         model: model || "gpt",
-        aspectRatio: aspectRatio || "9:16",
+        aspectRatio: aspectRatio || "1:1",
         subtitle: subtitle || "",
         watermark: watermark || ""
       }),
