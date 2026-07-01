@@ -18,6 +18,7 @@ export default function LibraryPane({
   onClearAll,
 }: LibraryPaneProps) {
   const [search, setSearch] = useState("");
+  const [failedUrls, setFailedUrls] = useState<Record<string, boolean>>({});
 
   const filteredItems = items.filter((item) => {
     const s = search.toLowerCase();
@@ -111,12 +112,18 @@ export default function LibraryPane({
               >
                 {/* Micro Thumbnail */}
                 <div className="relative w-12 h-12 rounded-lg bg-slate-100 overflow-hidden flex-shrink-0 border border-slate-200">
-                  {(item.imageUrl916 || item.imageUrl169 || item.imageUrl) ? (
+                  {(item.imageUrl916 || item.imageUrl169 || item.imageUrl) && !failedUrls[item.imageUrl916 || item.imageUrl169 || item.imageUrl || ""] ? (
                     <img
                       src={item.imageUrl916 || item.imageUrl169 || item.imageUrl}
                       alt={item.title}
                       className="w-full h-full object-cover"
                       referrerPolicy="no-referrer"
+                      onError={() => {
+                        const targetUrl = item.imageUrl916 || item.imageUrl169 || item.imageUrl || "";
+                        if (targetUrl) {
+                          setFailedUrls((prev) => ({ ...prev, [targetUrl]: true }));
+                        }
+                      }}
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center bg-slate-50 text-indigo-500">

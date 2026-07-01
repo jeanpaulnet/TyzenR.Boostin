@@ -47,6 +47,29 @@ const ai = new GoogleGenAI({
   },
 });
 
+// Proxy image endpoint to allow clipboard copy without CORS issues
+app.get("/api/proxy-image", async (req, res) => {
+  const imageUrl = req.query.url;
+  if (!imageUrl || typeof imageUrl !== "string") {
+    return res.status(400).send("URL parameter is required");
+  }
+  try {
+    const response = await fetch(imageUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image from remote: ${response.statusText}`);
+    }
+    const contentType = response.headers.get("content-type") || "image/png";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    
+    const arrayBuffer = await response.arrayBuffer();
+    res.send(Buffer.from(arrayBuffer));
+  } catch (err: any) {
+    console.error("Error proxying image:", err);
+    res.status(500).send("Error proxying image: " + err.message);
+  }
+});
+
 // Endpoint to scan URL
 app.post("/api/scan", async (req, res) => {
   const { url, bizName, website, watermark, promptTemplate, commonTags } = req.body;
@@ -470,6 +493,10 @@ app.post("/ai/picture/url", async (req, res) => {
     return res.status(400).json({ success: false, error: "URL is required" });
   }
 
+  if (!userPrompt || !userPrompt.trim()) {
+    return res.status(400).json({ success: false, error: "User Prompt invalid.  Go to Settings & Save." });
+  }
+
   // Reconstruct prompt from settings with parameters replaced
   let replacedPrompt = userPrompt || "";
   if (replacedPrompt) {
@@ -600,12 +627,8 @@ app.post("/ai/picture/url", async (req, res) => {
 
 // Helper to automatically scan and resolve Instagram / Meta App ID and Secret from process.env
 function resolveInstagramCredentials() {
-  let appId = process.env.INSTAGRAM_APP_ID || process.env.FACEBOOK_APP_ID;
-  let appSecret = process.env.INSTAGRAM_APP_SECRET || process.env.FACEBOOK_APP_SECRET;
-
-  if (appId && appSecret) {
-    return { appId, appSecret };
-  }
+  let appId: string | undefined = undefined;
+  let appSecret: string | undefined = undefined;
 
   const envKeys = Object.keys(process.env);
   
@@ -656,16 +679,25 @@ app.get("/api/auth/instagram/url", (req, res) => {
   const origin = req.query.origin || `${req.protocol}://${req.get("host")}`;
   const redirectUri = `${origin}/auth/instagram/callback`;
   
-  const { appId } = resolveInstagramCredentials();
+  const { appId, appSecret } = resolveInstagramCredentials();
+
   if (!appId) {
-    return res.status(400).json({ error: "No Meta/Instagram App ID could be detected automatically. Make sure you set INSTAGRAM_APP_ID in your project secrets." });
+    return res.status(400).json({ error: "No Facebook App ID could be detected automatically. Please configure FACEBOOK_APP_ID in your Project Secrets (via Settings -> Secrets)." });
   }
+  if (!appSecret) {
+    return res.status(400).json({ error: "No Facebook App Secret could be detected automatically. Please configure FACEBOOK_APP_SECRET in your Project Secrets (via Settings -> Secrets)." });
+  }
+
+  // Safely bundle the appId and appSecret into the state parameter
+  const statePayload = JSON.stringify({ appId, appSecret });
+  const stateEncoded = Buffer.from(statePayload).toString("base64");
 
   const params = new URLSearchParams({
     client_id: appId,
     redirect_uri: redirectUri,
     response_type: "code",
     scope: "instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement,pages_manage_posts",
+    state: stateEncoded,
   });
 
   const authUrl = `https://www.facebook.com/v20.0/dialog/oauth?${params.toString()}`;
@@ -673,11 +705,29 @@ app.get("/api/auth/instagram/url", (req, res) => {
 });
 
 app.get("/auth/instagram/callback", async (req, res) => {
-  const { code } = req.query;
+  const { code, state } = req.query;
   const origin = `${req.protocol}://${req.get("host")}`;
   const redirectUri = `${origin}/auth/instagram/callback`;
 
-  const { appId, appSecret } = resolveInstagramCredentials();
+  let appId = "";
+  let appSecret = "";
+
+  if (state) {
+    try {
+      const decoded = Buffer.from(state as string, "base64").toString("utf-8");
+      const parsed = JSON.parse(decoded);
+      appId = parsed.appId || "";
+      appSecret = parsed.appSecret || "";
+    } catch (e) {
+      console.error("Failed to decode OAuth state:", e);
+    }
+  }
+
+  if (!appId || !appSecret) {
+    const creds = resolveInstagramCredentials();
+    appId = appId || creds.appId || "";
+    appSecret = appSecret || creds.appSecret || "";
+  }
 
   if (!code) {
     return res.send(`

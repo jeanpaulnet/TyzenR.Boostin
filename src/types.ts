@@ -34,4 +34,21 @@ export interface Settings {
   promptTemplate: string;
   detailedPromptTemplate: string;
   commonTags: string;
+  
+  // Facebook credentials
+  fbPageId?: string;
+  fbAccessToken?: string;
+
+  // Instagram credentials
+  igAccountId?: string;
+  igAccessToken?: string;
+
+  // YouTube credentials
+  ytChannelId?: string;
+  ytApiKey?: string;
+
+  // WordPress credentials
+  wpUrl?: string;
+  wpUsername?: string;
+  wpAppPassword?: string;
 }

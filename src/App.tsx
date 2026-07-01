@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Settings as SettingsIcon, Sparkles, Database, HelpCircle, Compass, History, BookOpen, Layers } from "lucide-react";
+import { Settings as SettingsIcon, Sparkles, Database, HelpCircle, Compass, History, BookOpen, Layers, Send, Check } from "lucide-react";
 import { ScannedItem, Settings } from "./types";
 import LibraryPane from "./components/LibraryPane";
 import WorkPane from "./components/WorkPane";
@@ -13,12 +13,29 @@ const DEFAULT_SETTINGS: Settings = {
   promptTemplate: "Create a concise mobile-first summary image prompt. Use fewer visual sections. Focus on the article title, 3–5 key takeaways, vivid growth visuals, stock chart, product/business visuals, and rich cinematic depth.",
   detailedPromptTemplate: "Create a highly detailed corporate financial image prompt. Use an ultra-realistic premium investor research cover style. Show business model, products, financial growth, market opportunity, risks, valuation outlook, competitive positioning, and multibagger theme. Use vivid corporate colors, financial dashboards, stock charts, upward arrows, growth lines, product visuals, industry background, and rich cinematic depth.",
   commonTags: "#trending #news",
+  fbPageId: "",
+  fbAccessToken: "",
+  igAccountId: "",
+  igAccessToken: "",
+  ytChannelId: "",
+  ytApiKey: "",
+  wpUrl: "",
+  wpUsername: "",
+  wpAppPassword: "",
 };
 
 export default function App() {
   // Persistence States
   const [items, setItems] = useState<ScannedItem[]>([]);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [version, setVersion] = useState(() => {
+    try {
+      const saved = localStorage.getItem("boostin_version");
+      return saved || "2.0.4";
+    } catch (_) {
+      return "2.0.4";
+    }
+  });
   
   // UI Selection States
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -40,6 +57,8 @@ export default function App() {
   const [imageError, setImageError] = useState<string | null>(null);
   const [refreshingAspect, setRefreshingAspect] = useState<"1:1" | "9:16" | "16:9" | null>(null);
   const [autoSwitchMessage, setAutoSwitchMessage] = useState<string | null>(null);
+  const [showPublishToast, setShowPublishToast] = useState(false);
+  const [publishedVersion, setPublishedVersion] = useState("");
 
   // Load persistence from LocalStorage
   useEffect(() => {
@@ -69,7 +88,8 @@ export default function App() {
     try {
       const savedSettings = localStorage.getItem("boostin_settings");
       if (savedSettings) {
-        setSettings(JSON.parse(savedSettings));
+        const parsed = JSON.parse(savedSettings);
+        setSettings({ ...DEFAULT_SETTINGS, ...parsed });
       }
     } catch (e) {
       console.error("Failed loading persistent settings", e);
@@ -174,6 +194,42 @@ export default function App() {
       setScannedDescription("");
       setScannedPrompt("");
     }
+  };
+
+  // Publish / Version increaser
+  const handlePublish = (): string => {
+    let latestVersion = "2.0.4";
+    try {
+      const saved = localStorage.getItem("boostin_version");
+      if (saved) {
+        latestVersion = saved;
+      } else {
+        latestVersion = version || "2.0.4";
+      }
+    } catch (_) {
+      latestVersion = version || "2.0.4";
+    }
+
+    if (latestVersion.startsWith("v")) {
+      latestVersion = latestVersion.substring(1);
+    }
+
+    const parts = latestVersion.split(".");
+    let newVersion = "";
+    if (parts.length === 3) {
+      const major = parts[0];
+      const minor = parseInt(parts[1], 10) + 1;
+      const patch = "0"; // Reset patch to 0 on minor version increment
+      newVersion = `${major}.${minor}.${patch}`;
+    } else {
+      newVersion = "2.1.0";
+    }
+
+    setVersion(newVersion);
+    try {
+      localStorage.setItem("boostin_version", newVersion);
+    } catch (_) {}
+    return newVersion;
   };
 
   // Updating active fields
@@ -326,6 +382,13 @@ export default function App() {
   // Re-run Image Generation only (if they modified the custom prompt or settings)
   const handleRegenerateImage = async (prompt: string, initialModel: string, aspectRatio: string) => {
     if (!selectedId) return;
+
+    if (!settings.promptTemplate || !settings.promptTemplate.trim() || !settings.detailedPromptTemplate || !settings.detailedPromptTemplate.trim()) {
+      setImageError("User Prompt invalid.  Go to Settings & Save.");
+      alert("User Prompt invalid.  Go to Settings & Save.");
+      return;
+    }
+
     setIsGeneratingImage(true);
     setLoadingStep("image");
     setImageError(null);
@@ -426,12 +489,19 @@ export default function App() {
             let azureStatus169 = item.azureStatus169;
 
             if (res11) {
-              imageUrl = res11.imageUrl;
+              imageUrl = res11.base64 || res11.imageUrl;
               azureUrl = res11.azureUrl;
               azureStatus = res11.azureStatus || "Success";
-              imageUrl11 = res11.imageUrl;
+              imageUrl11 = res11.base64 || res11.imageUrl;
               azureUrl11 = res11.azureUrl;
               azureStatus11 = res11.azureStatus || "Success";
+
+              if (item.imageUrl11 && !newPast11.includes(item.imageUrl11)) {
+                newPast11.push(item.imageUrl11);
+              }
+              if (item.imageUrl && !newPast.includes(item.imageUrl)) {
+                newPast.push(item.imageUrl);
+              }
 
               if (imageUrl) {
                 if (!newPast.includes(imageUrl)) {
@@ -444,9 +514,13 @@ export default function App() {
             }
 
             if (res169) {
-              imageUrl169 = res169.imageUrl;
+              imageUrl169 = res169.base64 || res169.imageUrl;
               azureUrl169 = res169.azureUrl;
               azureStatus169 = res169.azureStatus || "Success";
+
+              if (item.imageUrl169 && !newPast169.includes(item.imageUrl169)) {
+                newPast169.push(item.imageUrl169);
+              }
 
               if (imageUrl169 && !newPast169.includes(imageUrl169)) {
                 newPast169.push(imageUrl169);
@@ -489,6 +563,14 @@ export default function App() {
 
   const handleRefreshSingleImage = async (aspectRatio: "1:1" | "9:16" | "16:9") => {
     if (!selectedId) return;
+
+    const promptTemplate = aspectRatio === "16:9" ? settings.detailedPromptTemplate : settings.promptTemplate;
+    if (!promptTemplate || !promptTemplate.trim()) {
+      setImageError("User Prompt invalid.  Go to Settings & Save.");
+      alert("User Prompt invalid.  Go to Settings & Save.");
+      return;
+    }
+
     setRefreshingAspect(aspectRatio);
     setImageError(null);
     setAutoSwitchMessage(null);
@@ -496,8 +578,6 @@ export default function App() {
     try {
       const activeItem = items.find((item) => item.id === selectedId);
       if (!activeItem) throw new Error("No active URL item selected to regenerate image for");
-
-      const promptTemplate = aspectRatio === "16:9" ? settings.detailedPromptTemplate : settings.promptTemplate;
 
       let currentModel = model;
       let response = await fetch("/ai/picture/url", {
@@ -544,7 +624,7 @@ export default function App() {
         throw new Error(imageData.error || `${aspectRatio} image refresh pipeline error`);
       }
 
-      const imageUrl = imageData.imageUrl;
+      const imageUrl = imageData.base64 || imageData.imageUrl;
       const azureUrl = imageData.azureUrl;
       const azureStatus = imageData.azureStatus || "Success";
 
@@ -554,6 +634,20 @@ export default function App() {
           const newPast11 = [...(item.pastImageUrls11 || [])];
           const newPast169 = [...(item.pastImageUrls169 || [])];
           const newPast916 = [...(item.pastImageUrls916 || [])];
+
+          // Ensure pre-existing active images are preserved in history before overwriting
+          if (item.imageUrl && !newPast.includes(item.imageUrl)) {
+            newPast.push(item.imageUrl);
+          }
+          if (item.imageUrl11 && !newPast11.includes(item.imageUrl11)) {
+            newPast11.push(item.imageUrl11);
+          }
+          if (item.imageUrl169 && !newPast169.includes(item.imageUrl169)) {
+            newPast169.push(item.imageUrl169);
+          }
+          if (item.imageUrl916 && !newPast916.includes(item.imageUrl916)) {
+            newPast916.push(item.imageUrl916);
+          }
 
           if (imageUrl) {
             if (aspectRatio === "1:1") {
@@ -603,6 +697,14 @@ export default function App() {
     return items.find((item) => item.id === selectedId) || null;
   };
 
+  const handlePublishClick = () => {
+    if (!getActiveItem()) return;
+    const newVer = handlePublish();
+    setPublishedVersion(newVer);
+    setShowPublishToast(true);
+    setTimeout(() => setShowPublishToast(false), 4000);
+  };
+
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-800 flex flex-col antialiased">
       
@@ -618,14 +720,15 @@ export default function App() {
             <h1 className="text-xl font-black text-white tracking-tight font-display flex items-center gap-1.5 leading-none">
               <span>BOOSTIN</span>
               <span className="bg-gradient-to-r from-[#a3e635] via-[#10b981] to-[#8b5cf6] bg-clip-text text-transparent font-black tracking-wider">AI</span>
+              <span className="text-xs text-slate-500 font-mono font-normal ml-1.5">v{version}</span>
             </h1>
             <p className="text-[10px] text-slate-400 font-medium mt-0.5">Generate high-converting social creatives from raw URLs</p>
           </div>
         </div>
 
         {/* Global Action / Settings Trigger */}
-        <div className="flex items-center gap-6">
-          <div className="hidden sm:flex flex-col items-end">
+        <div className="flex items-center gap-4 sm:gap-6">
+          <div className="hidden md:flex flex-col items-end">
             <span className="text-[9px] uppercase tracking-widest text-slate-400 font-bold">Active Profile</span>
             <span className="text-xs font-semibold text-cyan-400">{settings.bizName}</span>
           </div>
@@ -634,7 +737,7 @@ export default function App() {
           <button
             id="settings-trigger-btn"
             onClick={() => setIsSettingsOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-200 rounded-xl border border-white/10 text-xs font-semibold transition-all active:scale-[0.98] shadow-sm"
+            className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-200 rounded-xl border border-white/10 text-xs font-semibold transition-all active:scale-[0.98] shadow-sm cursor-pointer"
           >
             <SettingsIcon className="w-4 h-4 text-indigo-400" />
             <span>Business Settings</span>
@@ -697,6 +800,7 @@ export default function App() {
               onRefreshSingleImage={handleRefreshSingleImage}
               autoSwitchMessage={autoSwitchMessage}
               onClearAutoSwitchMessage={() => setAutoSwitchMessage(null)}
+              onPublish={handlePublish}
             />
           </div>
 
@@ -712,7 +816,7 @@ export default function App() {
           </span>
         </div>
         <div className="text-[9px] uppercase tracking-widest font-medium hidden sm:block">
-          Boostin AI Engine v2.0.4 - Cloud AI Accelerated
+          Boostin AI Engine v{version} - Cloud AI Accelerated
         </div>
       </footer>
 
@@ -723,6 +827,27 @@ export default function App() {
         settings={settings}
         onSave={handleSaveSettings}
       />
+
+      {/* Dynamic Publish Success Toast */}
+      {showPublishToast && (
+        <div className="fixed bottom-6 right-6 z-[9999] bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-200/80 p-4.5 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] flex items-start gap-3.5 max-w-sm animate-fade-in">
+          <div className="w-8 h-8 rounded-xl bg-emerald-500 flex items-center justify-center text-white shrink-0 shadow-md shadow-emerald-500/20">
+            <Check className="w-4.5 h-4.5 stroke-[2.5]" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-black text-emerald-950 uppercase tracking-wider font-display text-left">Creative Published Successfully</p>
+            <p className="text-[10px] text-emerald-800 font-medium mt-1 leading-relaxed text-left">
+              Engine version bumped to <span className="font-bold">v{publishedVersion}</span>. Your active assets and scanned metadata are stored to production!
+            </p>
+          </div>
+          <button 
+            onClick={() => setShowPublishToast(false)} 
+            className="text-emerald-500 hover:text-emerald-700 text-sm font-bold p-1 hover:scale-110 transition-transform cursor-pointer"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
     </div>
   );

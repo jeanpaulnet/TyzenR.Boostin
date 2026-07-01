@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Maximize2, Download, Copy, Check, Eye, ExternalLink, AlertCircle, Sparkles, History, Loader2, RefreshCw } from "lucide-react";
+import { Maximize2, Download, Copy, Check, Eye, ExternalLink, AlertCircle, Sparkles, History, Loader2, RefreshCw, Send } from "lucide-react";
 import { ScannedItem, Settings } from "../types";
 
 interface PreviewPaneProps {
@@ -29,6 +29,7 @@ interface PreviewPaneProps {
   onRefreshSingleImage?: (aspectRatio: "1:1" | "9:16" | "16:9") => Promise<void>;
   autoSwitchMessage?: string | null;
   onClearAutoSwitchMessage?: () => void;
+  onPublish?: () => string;
 }
 
 export default function PreviewPane({
@@ -49,20 +50,33 @@ export default function PreviewPane({
   onRefreshSingleImage,
   autoSwitchMessage = null,
   onClearAutoSwitchMessage,
+  onPublish,
 }: PreviewPaneProps) {
   const [fullscreenImgUrl, setFullscreenImgUrl] = useState<string | null>(null);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [historyAspect, setHistoryAspect] = useState<"1:1" | "16:9" | "9:16" | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showPublishToast, setShowPublishToast] = useState(false);
+  const [publishedVersion, setPublishedVersion] = useState("");
+  const [imageLoadErrors, setImageLoadErrors] = useState<Record<string, boolean>>({});
+
+  const handleImageLoadError = (url: string) => {
+    setImageLoadErrors((prev) => ({ ...prev, [url]: true }));
+  };
 
   const copyImageToClipboard = async (imgUrl: string) => {
     try {
+      const isExternal = imgUrl.startsWith("http://") || imgUrl.startsWith("https://");
+      const finalUrl = isExternal 
+        ? `/api/proxy-image?url=${encodeURIComponent(imgUrl)}`
+        : imgUrl;
+
       const img = new Image();
       img.crossOrigin = "anonymous";
       await new Promise((resolve, reject) => {
         img.onload = resolve;
         img.onerror = reject;
-        img.src = imgUrl;
+        img.src = finalUrl;
       });
 
       const canvas = document.createElement("canvas");
@@ -87,7 +101,11 @@ export default function PreviewPane({
     } catch (err) {
       console.error("Failed to copy image to clipboard via canvas:", err);
       try {
-        const response = await fetch(imgUrl);
+        const isExternal = imgUrl.startsWith("http://") || imgUrl.startsWith("https://");
+        const finalUrl = isExternal 
+          ? `/api/proxy-image?url=${encodeURIComponent(imgUrl)}`
+          : imgUrl;
+        const response = await fetch(finalUrl);
         const blob = await response.blob();
         await navigator.clipboard.write([
           new ClipboardItem({
@@ -232,6 +250,16 @@ export default function PreviewPane({
     await onRegenerateImage(scannedPrompt, model, aspectRatio);
   };
 
+  const handlePublishClick = () => {
+    if (!activeItem) return;
+    if (onPublish) {
+      const newVer = onPublish();
+      setPublishedVersion(newVer);
+      setShowPublishToast(true);
+      setTimeout(() => setShowPublishToast(false), 4000);
+    }
+  };
+
   // Helper to resolve Tailwind aspect ratios
   const getAspectRatioClass = (ratio: string) => {
     switch (ratio) {
@@ -267,8 +295,30 @@ export default function PreviewPane({
   };
 
   return (
-    <div className="flex flex-col h-full bg-white/80 backdrop-blur-md border border-slate-200/80 rounded-2xl shadow-xl overflow-y-auto p-6 space-y-4">
+    <div className="flex flex-col h-full bg-white/80 backdrop-blur-md border border-slate-200/80 rounded-2xl shadow-xl overflow-y-auto p-6 space-y-4 relative">
       
+      {/* Dynamic Publish Success Toast */}
+      {showPublishToast && (
+        <div className="absolute top-4 left-6 right-6 bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 flex items-start gap-2.5 shadow-lg z-50 animate-fade-in text-left">
+          <div className="p-1.5 bg-emerald-500 rounded-lg text-white shrink-0 shadow-sm">
+            <Check className="w-4 h-4 stroke-[2.5]" />
+          </div>
+          <div className="flex-1">
+            <p className="text-xs font-black text-emerald-950 uppercase tracking-wider font-display">Creative Published Successfully</p>
+            <p className="text-[10px] text-emerald-700 font-mono mt-0.5">
+              Engine version bumped to <span className="font-bold">v{publishedVersion}</span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowPublishToast(false)}
+            className="text-emerald-400 hover:text-emerald-600 font-black text-sm p-1 cursor-pointer transition-colors"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Pane Heading */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
@@ -299,11 +349,6 @@ export default function PreviewPane({
               <>
                 <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
                 <span>Generating...</span>
-              </>
-            ) : isScanning ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
-                <span>Scanning...</span>
               </>
             ) : (
               <>
@@ -344,7 +389,6 @@ export default function PreviewPane({
             </div>
           </div>
         </div>
-
 
       </div>
 
@@ -409,12 +453,19 @@ export default function PreviewPane({
                       }`}
                     >
                       <div className="w-12 h-12 rounded-lg bg-slate-900 border border-slate-700/50 overflow-hidden flex-shrink-0 relative">
-                        <img
-                          src={url}
-                          alt={`Past gen ${index + 1}`}
-                          className="w-full h-full object-cover"
-                          referrerPolicy="no-referrer"
-                        />
+                        {imageLoadErrors[url] ? (
+                          <div className="w-full h-full flex items-center justify-center bg-red-950/40 text-red-400" title="Cached image expired on server">
+                            <AlertCircle className="w-4 h-4 shrink-0" />
+                          </div>
+                        ) : (
+                          <img
+                            src={url}
+                            alt={`Past gen ${index + 1}`}
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                            onError={() => handleImageLoadError(url)}
+                          />
+                        )}
                         {isActive && (
                           <div className="absolute inset-0 bg-indigo-600/40 flex items-center justify-center">
                             <Check className="w-4 h-4 text-white stroke-[3]" />
@@ -555,18 +606,27 @@ export default function PreviewPane({
                       </div>
                     )
                   ) : activeItem.imageUrl ? (
-                    <div 
-                      className="relative overflow-hidden rounded-xl shadow-xl border border-slate-200 bg-slate-950 transition-all duration-300 cursor-pointer hover:border-indigo-400 w-full max-w-[300px] aspect-square"
-                      onClick={() => setFullscreenImgUrl(activeItem.imageUrl)}
-                      title="Click to view fullscreen"
-                    >
-                      <img
-                        src={activeItem.imageUrl}
-                        alt={`${activeItem.title || "Branded Visual"} - 1:1`}
-                        className="w-full h-full object-contain"
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
+                    imageLoadErrors[activeItem.imageUrl] ? (
+                      <div className="relative overflow-hidden rounded-xl border border-dashed border-red-300 bg-red-50/50 w-full max-w-[300px] aspect-square flex flex-col items-center justify-center text-center p-4">
+                        <AlertCircle className="w-8 h-8 text-red-400 mb-1.5" />
+                        <span className="text-[11px] font-bold text-red-700">Image Expired</span>
+                        <span className="text-[9px] text-red-500 mt-1 max-w-[200px]">Server cache cleared. Click the Refresh icon to regenerate.</span>
+                      </div>
+                    ) : (
+                      <div 
+                        className="relative overflow-hidden rounded-xl shadow-xl border border-slate-200 bg-slate-950 transition-all duration-300 cursor-pointer hover:border-indigo-400 w-full max-w-[300px] aspect-square"
+                        onClick={() => setFullscreenImgUrl(activeItem.imageUrl)}
+                        title="Click to view fullscreen"
+                      >
+                        <img
+                          src={activeItem.imageUrl}
+                          alt={`${activeItem.title || "Branded Visual"} - 1:1`}
+                          className="w-full h-full object-contain"
+                          referrerPolicy="no-referrer"
+                          onError={() => handleImageLoadError(activeItem.imageUrl)}
+                        />
+                      </div>
+                    )
                   ) : (
                     <div className="relative overflow-hidden rounded-xl border border-dashed border-slate-300 bg-slate-50/50 w-full max-w-[300px] aspect-square flex flex-col items-center justify-center text-center p-4">
                       <Sparkles className="w-8 h-8 text-slate-300 mb-2" />
@@ -575,57 +635,75 @@ export default function PreviewPane({
                   )}
 
                   {/* Actions for 1:1 */}
-                  {activeItem.imageUrl && (
-                    <div className="flex flex-col gap-1.5 p-1 bg-slate-50 rounded-lg border border-slate-200 self-center">
-                      <button
-                        type="button"
-                        onClick={() => setFullscreenImgUrl(activeItem.imageUrl)}
-                        className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
-                        title="View Fullscreen"
-                      >
-                        <Maximize2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onRefreshSingleImage?.("1:1")}
-                        disabled={refreshingAspect === "1:1" || isLoading}
-                        className="p-1.5 hover:bg-red-50 rounded text-red-400 hover:text-red-600 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                        title="Generate Again / Refresh (Gen)"
-                      >
-                        <RefreshCw className={`w-3.5 h-3.5 ${refreshingAspect === "1:1" ? "animate-spin text-red-500" : ""}`} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyImage(activeItem.imageUrl, "1:1")}
-                        className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-emerald-600 transition-colors cursor-pointer"
-                        title="Copy to Clipboard"
-                      >
-                        {copiedId === "1:1" ? (
-                          <Check className="w-3.5 h-3.5 text-emerald-600" />
-                        ) : (
-                          <Copy className="w-3.5 h-3.5" />
+                  {activeItem && (
+                    <div className="flex flex-col justify-between h-[300px] py-0.5 shrink-0">
+                      <div className="flex flex-col gap-1.5 p-1 bg-slate-50 rounded-lg border border-slate-200">
+                        {activeItem.imageUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setFullscreenImgUrl(activeItem.imageUrl)}
+                            className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
+                            title="View Fullscreen"
+                          >
+                            <Maximize2 className="w-3.5 h-3.5" />
+                          </button>
                         )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setHistoryAspect(prev => prev === "1:1" ? null : "1:1")}
-                        className={`p-1.5 rounded transition-colors cursor-pointer ${
-                          historyAspect === "1:1"
-                            ? "bg-indigo-100 text-indigo-600 hover:bg-indigo-200"
-                            : "hover:bg-slate-200 text-slate-600 hover:text-indigo-600"
-                        }`}
-                        title="View Picture History"
-                      >
-                        <History className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDownloadSpecific(activeItem.imageUrl, "-1_1")}
-                        className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
-                        title="Download Picture"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const hasPic = !!activeItem?.imageUrl;
+                            if (!hasPic || window.confirm("Recreate?")) {
+                              onRefreshSingleImage?.("1:1");
+                            }
+                          }}
+                          disabled={refreshingAspect === "1:1" || isLoading}
+                          className="p-1.5 hover:bg-red-50 rounded text-red-400 hover:text-red-600 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                          title={activeItem.imageUrl ? "Generate Again / Refresh (Gen)" : "Generate 1:1 Picture"}
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${refreshingAspect === "1:1" ? "animate-spin text-red-500" : ""}`} />
+                        </button>
+                        {activeItem.imageUrl && (
+                          <button
+                            type="button"
+                            onClick={() => handleCopyImage(activeItem.imageUrl, "1:1")}
+                            className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-emerald-600 transition-colors cursor-pointer"
+                            title="Copy to Clipboard"
+                          >
+                            {copiedId === "1:1" ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        )}
+                        {activeItem.imageUrl && (
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadSpecific(activeItem.imageUrl, "-1_1")}
+                            className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
+                            title="Download Picture"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {(activeItem.imageUrl || (activeItem.pastImageUrls11 && activeItem.pastImageUrls11.length > 0)) && (
+                        <div className="flex flex-col p-1 bg-slate-50 rounded-lg border border-slate-200">
+                          <button
+                            type="button"
+                            onClick={() => setHistoryAspect(prev => prev === "1:1" ? null : "1:1")}
+                            className={`p-1.5 rounded transition-colors cursor-pointer ${
+                              historyAspect === "1:1"
+                                ? "bg-indigo-100 text-indigo-600 hover:bg-indigo-200"
+                                : "hover:bg-slate-200 text-slate-600 hover:text-indigo-600"
+                            }`}
+                            title="View Picture History"
+                          >
+                            <History className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -667,18 +745,27 @@ export default function PreviewPane({
                       </div>
                     )
                   ) : activeItem.imageUrl169 ? (
-                    <div 
-                      className="relative overflow-hidden rounded-xl shadow-xl border border-slate-200 bg-slate-950 transition-all duration-300 cursor-pointer hover:border-indigo-400 w-full max-w-[360px] aspect-[16/9]"
-                      onClick={() => setFullscreenImgUrl(activeItem.imageUrl169 || null)}
-                      title="Click to view fullscreen"
-                    >
-                      <img
-                        src={activeItem.imageUrl169}
-                        alt={`${activeItem.title || "Branded Visual"} - 16:9`}
-                        className="w-full h-full object-contain"
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
+                    imageLoadErrors[activeItem.imageUrl169] ? (
+                      <div className="relative overflow-hidden rounded-xl border border-dashed border-red-300 bg-red-50/50 w-full max-w-[360px] aspect-[16/9] flex flex-col items-center justify-center text-center p-4">
+                        <AlertCircle className="w-8 h-8 text-red-400 mb-1.5" />
+                        <span className="text-[11px] font-bold text-red-700">Image Expired</span>
+                        <span className="text-[9px] text-red-500 mt-1 max-w-[240px]">Server cache cleared. Click the Refresh icon to regenerate.</span>
+                      </div>
+                    ) : (
+                      <div 
+                        className="relative overflow-hidden rounded-xl shadow-xl border border-slate-200 bg-slate-950 transition-all duration-300 cursor-pointer hover:border-indigo-400 w-full max-w-[360px] aspect-[16/9]"
+                        onClick={() => setFullscreenImgUrl(activeItem.imageUrl169 || null)}
+                        title="Click to view fullscreen"
+                      >
+                        <img
+                          src={activeItem.imageUrl169}
+                          alt={`${activeItem.title || "Branded Visual"} - 16:9`}
+                          className="w-full h-full object-contain"
+                          referrerPolicy="no-referrer"
+                          onError={() => handleImageLoadError(activeItem.imageUrl169!)}
+                        />
+                      </div>
+                    )
                   ) : (
                     <div className="relative overflow-hidden rounded-xl border border-dashed border-slate-300 bg-slate-50/50 w-full max-w-[360px] aspect-[16/9] flex flex-col items-center justify-center text-center p-4">
                       <Sparkles className="w-8 h-8 text-slate-300 mb-2" />
@@ -687,57 +774,75 @@ export default function PreviewPane({
                   )}
 
                   {/* Actions for 16:9 */}
-                  {activeItem.imageUrl169 && (
-                    <div className="flex flex-col gap-1.5 p-1 bg-slate-50 rounded-lg border border-slate-200 self-center">
-                      <button
-                        type="button"
-                        onClick={() => setFullscreenImgUrl(activeItem.imageUrl169 || null)}
-                        className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
-                        title="View Fullscreen"
-                      >
-                        <Maximize2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onRefreshSingleImage?.("16:9")}
-                        disabled={refreshingAspect === "16:9" || isLoading}
-                        className="p-1.5 hover:bg-red-50 rounded text-red-400 hover:text-red-600 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                        title="Generate Again / Refresh (Gen)"
-                      >
-                        <RefreshCw className={`w-3.5 h-3.5 ${refreshingAspect === "16:9" ? "animate-spin text-red-500" : ""}`} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyImage(activeItem.imageUrl169!, "16:9")}
-                        className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-emerald-600 transition-colors cursor-pointer"
-                        title="Copy to Clipboard"
-                      >
-                        {copiedId === "16:9" ? (
-                          <Check className="w-3.5 h-3.5 text-emerald-600" />
-                        ) : (
-                          <Copy className="w-3.5 h-3.5" />
+                  {activeItem && (
+                    <div className="flex flex-col justify-between h-[202px] py-0.5 shrink-0">
+                      <div className="flex flex-col gap-1.5 p-1 bg-slate-50 rounded-lg border border-slate-200">
+                        {activeItem.imageUrl169 && (
+                          <button
+                            type="button"
+                            onClick={() => setFullscreenImgUrl(activeItem.imageUrl169 || null)}
+                            className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
+                            title="View Fullscreen"
+                          >
+                            <Maximize2 className="w-3.5 h-3.5" />
+                          </button>
                         )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setHistoryAspect(prev => prev === "16:9" ? null : "16:9")}
-                        className={`p-1.5 rounded transition-colors cursor-pointer ${
-                          historyAspect === "16:9"
-                            ? "bg-indigo-100 text-indigo-600 hover:bg-indigo-200"
-                            : "hover:bg-slate-200 text-slate-600 hover:text-indigo-600"
-                        }`}
-                        title="View Picture History"
-                      >
-                        <History className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDownloadSpecific(activeItem.imageUrl169!, "-16_9")}
-                        className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
-                        title="Download Picture"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const hasPic = !!activeItem?.imageUrl169;
+                            if (!hasPic || window.confirm("Recreate?")) {
+                              onRefreshSingleImage?.("16:9");
+                            }
+                          }}
+                          disabled={refreshingAspect === "16:9" || isLoading}
+                          className="p-1.5 hover:bg-red-50 rounded text-red-400 hover:text-red-600 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                          title={activeItem.imageUrl169 ? "Generate Again / Refresh (Gen)" : "Generate 16:9 Picture"}
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${refreshingAspect === "16:9" ? "animate-spin text-red-500" : ""}`} />
+                        </button>
+                        {activeItem.imageUrl169 && (
+                          <button
+                            type="button"
+                            onClick={() => handleCopyImage(activeItem.imageUrl169!, "16:9")}
+                            className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-emerald-600 transition-colors cursor-pointer"
+                            title="Copy to Clipboard"
+                          >
+                            {copiedId === "16:9" ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        )}
+                        {activeItem.imageUrl169 && (
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadSpecific(activeItem.imageUrl169!, "-16_9")}
+                            className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
+                            title="Download Picture"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {(activeItem.imageUrl169 || (activeItem.pastImageUrls169 && activeItem.pastImageUrls169.length > 0)) && (
+                        <div className="flex flex-col p-1 bg-slate-50 rounded-lg border border-slate-200">
+                          <button
+                            type="button"
+                            onClick={() => setHistoryAspect(prev => prev === "16:9" ? null : "16:9")}
+                            className={`p-1.5 rounded transition-colors cursor-pointer ${
+                              historyAspect === "16:9"
+                                ? "bg-indigo-100 text-indigo-600 hover:bg-indigo-200"
+                                : "hover:bg-slate-200 text-slate-600 hover:text-indigo-600"
+                            }`}
+                            title="View Picture History"
+                          >
+                            <History className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
