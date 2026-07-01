@@ -20,12 +20,15 @@ interface PreviewPaneProps {
     imageUrl?: string;
     imageUrl916?: string;
     imageUrl169?: string;
+    imageUrl11?: string;
   }) => void;
   settings: Settings;
   imageError?: string | null;
   setImageError?: (val: string | null) => void;
   refreshingAspect?: "1:1" | "9:16" | "16:9" | null;
   onRefreshSingleImage?: (aspectRatio: "1:1" | "9:16" | "16:9") => Promise<void>;
+  autoSwitchMessage?: string | null;
+  onClearAutoSwitchMessage?: () => void;
 }
 
 export default function PreviewPane({
@@ -44,10 +47,12 @@ export default function PreviewPane({
   setImageError,
   refreshingAspect,
   onRefreshSingleImage,
+  autoSwitchMessage = null,
+  onClearAutoSwitchMessage,
 }: PreviewPaneProps) {
   const [fullscreenImgUrl, setFullscreenImgUrl] = useState<string | null>(null);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
-  const [showPastUrls, setShowPastUrls] = useState(false);
+  const [historyAspect, setHistoryAspect] = useState<"1:1" | "16:9" | "9:16" | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const copyImageToClipboard = async (imgUrl: string) => {
@@ -126,11 +131,27 @@ export default function PreviewPane({
   }, [fullscreenImgUrl]);
 
   const pastUrlsList = activeItem
-    ? activeItem.pastImageUrls && activeItem.pastImageUrls.length > 0
-      ? activeItem.pastImageUrls
-      : activeItem.imageUrl
-        ? [activeItem.imageUrl]
-        : []
+    ? historyAspect === "1:1"
+      ? (activeItem.pastImageUrls11 && activeItem.pastImageUrls11.length > 0
+        ? activeItem.pastImageUrls11
+        : activeItem.imageUrl11
+          ? [activeItem.imageUrl11]
+          : activeItem.imageUrl
+            ? [activeItem.imageUrl]
+            : [])
+      : historyAspect === "16:9"
+        ? (activeItem.pastImageUrls169 && activeItem.pastImageUrls169.length > 0
+          ? activeItem.pastImageUrls169
+          : activeItem.imageUrl169
+            ? [activeItem.imageUrl169]
+            : [])
+        : historyAspect === "9:16"
+          ? (activeItem.pastImageUrls916 && activeItem.pastImageUrls916.length > 0
+            ? activeItem.pastImageUrls916
+            : activeItem.imageUrl916
+              ? [activeItem.imageUrl916]
+              : [])
+          : []
     : [];
 
   const hasMultipleImages = !!(activeItem && (activeItem.imageUrl916 || activeItem.imageUrl169));
@@ -324,42 +345,23 @@ export default function PreviewPane({
           </div>
         </div>
 
-        {/* History Action on Right */}
-        <div className="flex items-center gap-2">
-          <button
-            id="history-action-btn"
-            disabled={!activeItem || isLoading}
-            onClick={() => {
-              setShowPastUrls((prev) => !prev);
-            }}
-            className={`p-2.5 rounded-xl border transition-all active:scale-[0.98] flex items-center justify-center ${
-              !activeItem || isLoading
-                ? "opacity-40 cursor-not-allowed pointer-events-none bg-slate-100 text-slate-400 border-slate-200"
-                : showPastUrls
-                  ? "bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600 shadow-md shadow-indigo-500/10 hover:scale-105"
-                  : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 hover:scale-105"
-            }`}
-            title="View Picture History"
-          >
-            <History className="w-4 h-4" />
-          </button>
-        </div>
+
       </div>
 
 
 
       {/* Main Image Visual Container */}
       <div className={`flex flex-col items-center justify-start bg-slate-50/50 rounded-2xl border border-slate-200/60 p-4 relative transition-all duration-300 ${hasMultipleImages ? "h-[620px] overflow-y-auto w-full" : getContainerHeightClass(aspectRatio) + " overflow-hidden"}`}>
-        {showPastUrls && (
+        {historyAspect && (
           <div className="absolute inset-0 bg-slate-900/95 backdrop-blur-sm z-30 flex flex-col p-4 text-white">
             <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
               <div className="flex items-center gap-2">
                 <History className="w-4 h-4 text-indigo-400" />
-                <h3 className="text-xs font-black uppercase tracking-wider font-display text-slate-200">Picture History ({pastUrlsList.length})</h3>
+                <h3 className="text-xs font-black uppercase tracking-wider font-display text-slate-200">{historyAspect} Picture History ({pastUrlsList.length})</h3>
               </div>
               <button
                 type="button"
-                onClick={() => setShowPastUrls(false)}
+                onClick={() => setHistoryAspect(null)}
                 className="w-6 h-6 flex items-center justify-center hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-all text-xs font-bold font-mono"
                 title="Close"
               >
@@ -370,18 +372,35 @@ export default function PreviewPane({
             {pastUrlsList.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center text-center p-4">
                 <History className="w-8 h-8 text-slate-600 mb-2 animate-pulse" />
-                <p className="text-xs text-slate-400">No past generated pictures for this URL yet.</p>
+                <p className="text-xs text-slate-400">No past generated pictures for {historyAspect} yet.</p>
               </div>
             ) : (
               <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar text-left">
                 {pastUrlsList.map((url, index) => {
-                  const isActive = activeItem?.imageUrl === url;
+                  const isActive = historyAspect === "1:1"
+                    ? (activeItem?.imageUrl11 === url || activeItem?.imageUrl === url)
+                    : historyAspect === "16:9"
+                      ? activeItem?.imageUrl169 === url
+                      : activeItem?.imageUrl916 === url;
                   return (
                     <div
                       key={index}
                       onClick={() => {
-                        onUpdateScannedFields({ imageUrl: url });
-                        setShowPastUrls(false);
+                        if (historyAspect === "1:1") {
+                          onUpdateScannedFields({
+                            imageUrl: url,
+                            imageUrl11: url,
+                          });
+                        } else if (historyAspect === "16:9") {
+                          onUpdateScannedFields({
+                            imageUrl169: url,
+                          });
+                        } else if (historyAspect === "9:16") {
+                          onUpdateScannedFields({
+                            imageUrl916: url,
+                          });
+                        }
+                        setHistoryAspect(null);
                       }}
                       className={`flex items-center gap-3 p-2 rounded-xl border transition-all cursor-pointer ${
                         isActive
@@ -476,31 +495,66 @@ export default function PreviewPane({
               </button>
             </div>
           </div>
-        ) : isLoading ? (
-          <div className="flex flex-col items-center justify-center space-y-4 text-center animate-pulse">
-            <div className="relative w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center border border-indigo-100 shadow-md">
-              <Sparkles className="w-8 h-8 text-indigo-600 animate-spin" />
-            </div>
-            <div>
-              <p className="text-sm font-bold text-slate-800 font-display">Generating Masterpiece...</p>
-              <p className="text-xs text-slate-500 max-w-[200px] mt-1">Applying style prompt & formatting branding watermark</p>
-            </div>
-          </div>
         ) : activeItem ? (
-          (activeItem.imageUrl || activeItem.imageUrl169) ? (
+          (activeItem.imageUrl || activeItem.imageUrl169 || isLoading || refreshingAspect) ? (
             <div className="w-full flex flex-col items-center space-y-6">
-              {/* 1:1 Square Image Display */}
-              {activeItem.imageUrl && (
-                <div className="w-full flex flex-col items-center space-y-2 animate-fade-in pb-2">
-                  <div className="flex items-center justify-between w-full max-w-[300px] px-1">
-                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider font-mono">
-                      1:1 Square
-                    </span>
-                    <span className="text-[9px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-bold font-mono">
-                      Square
-                    </span>
+              {autoSwitchMessage && (
+                <div className="w-full max-w-[360px] bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2.5 shadow-sm relative animate-fade-in text-left">
+                  <Sparkles className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                  <div className="flex-1 pr-4">
+                    <p className="text-[11px] font-semibold text-amber-900 leading-snug">
+                      {autoSwitchMessage}
+                    </p>
+                    <p className="text-[9px] text-amber-600/80 mt-0.5">
+                      Retried automatically using the alternative provider.
+                    </p>
                   </div>
-                  <div className="flex items-center gap-3 w-full justify-center">
+                  <button
+                    type="button"
+                    onClick={onClearAutoSwitchMessage}
+                    className="absolute top-2.5 right-2.5 text-amber-400 hover:text-amber-600 font-bold text-xs p-1 hover:scale-110 transition-transform cursor-pointer"
+                    title="Dismiss"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+              {/* 1:1 Square Image Display */}
+              <div className="w-full flex flex-col items-center space-y-2 animate-fade-in pb-2">
+                <div className="flex items-center justify-between w-full max-w-[300px] px-1">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider font-mono">
+                    1:1 Square
+                  </span>
+                  <span className="text-[9px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-bold font-mono">
+                    Square
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 w-full justify-center">
+                  {/* Container for 1:1 image or loader */}
+                  {(isLoading || refreshingAspect === "1:1") ? (
+                    activeItem.imageUrl ? (
+                      <div className="relative overflow-hidden rounded-xl shadow-xl border border-slate-200 bg-slate-950 w-full max-w-[300px] aspect-square">
+                        <img
+                          src={activeItem.imageUrl}
+                          alt={`${activeItem.title || "Branded Visual"} - 1:1`}
+                          className="w-full h-full object-contain opacity-50"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute inset-0 bg-slate-900/60 flex flex-col items-center justify-center text-center p-4">
+                          <RefreshCw className="w-8 h-8 text-red-400 animate-spin mb-2" />
+                          <span className="text-[10px] font-bold text-white uppercase tracking-wider">Refreshing 1:1...</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="relative overflow-hidden rounded-xl shadow-xl border border-slate-200 bg-slate-50 w-full max-w-[300px] aspect-square flex flex-col items-center justify-center text-center p-4 animate-pulse">
+                        <div className="relative w-12 h-12 rounded-full bg-red-50 flex items-center justify-center border border-red-100 shadow-md mb-2">
+                          <RefreshCw className="w-6 h-6 text-red-500 animate-spin" />
+                        </div>
+                        <span className="text-[11px] font-bold text-slate-700 font-display">Generating 1:1 Image...</span>
+                        <span className="text-[9px] text-slate-400 mt-0.5 font-mono">Tyzenr API Request</span>
+                      </div>
+                    )
+                  ) : activeItem.imageUrl ? (
                     <div 
                       className="relative overflow-hidden rounded-xl shadow-xl border border-slate-200 bg-slate-950 transition-all duration-300 cursor-pointer hover:border-indigo-400 w-full max-w-[300px] aspect-square"
                       onClick={() => setFullscreenImgUrl(activeItem.imageUrl)}
@@ -513,7 +567,15 @@ export default function PreviewPane({
                         referrerPolicy="no-referrer"
                       />
                     </div>
-                    {/* Compact actions block to the right */}
+                  ) : (
+                    <div className="relative overflow-hidden rounded-xl border border-dashed border-slate-300 bg-slate-50/50 w-full max-w-[300px] aspect-square flex flex-col items-center justify-center text-center p-4">
+                      <Sparkles className="w-8 h-8 text-slate-300 mb-2" />
+                      <span className="text-[11px] font-medium text-slate-400">1:1 Picture Not Generated</span>
+                    </div>
+                  )}
+
+                  {/* Actions for 1:1 */}
+                  {activeItem.imageUrl && (
                     <div className="flex flex-col gap-1.5 p-1 bg-slate-50 rounded-lg border border-slate-200 self-center">
                       <button
                         type="button"
@@ -526,7 +588,7 @@ export default function PreviewPane({
                       <button
                         type="button"
                         onClick={() => onRefreshSingleImage?.("1:1")}
-                        disabled={refreshingAspect !== null || isLoading}
+                        disabled={refreshingAspect === "1:1" || isLoading}
                         className="p-1.5 hover:bg-red-50 rounded text-red-400 hover:text-red-600 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                         title="Generate Again / Refresh (Gen)"
                       >
@@ -546,6 +608,18 @@ export default function PreviewPane({
                       </button>
                       <button
                         type="button"
+                        onClick={() => setHistoryAspect(prev => prev === "1:1" ? null : "1:1")}
+                        className={`p-1.5 rounded transition-colors cursor-pointer ${
+                          historyAspect === "1:1"
+                            ? "bg-indigo-100 text-indigo-600 hover:bg-indigo-200"
+                            : "hover:bg-slate-200 text-slate-600 hover:text-indigo-600"
+                        }`}
+                        title="View Picture History"
+                      >
+                        <History className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleDownloadSpecific(activeItem.imageUrl, "-1_1")}
                         className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
                         title="Download Picture"
@@ -553,22 +627,46 @@ export default function PreviewPane({
                         <Download className="w-3.5 h-3.5" />
                       </button>
                     </div>
-                  </div>
+                  )}
                 </div>
-              )}
+              </div>
 
               {/* 16:9 Landscape Image Display */}
-              {activeItem.imageUrl169 && (
-                <div className="w-full flex flex-col items-center space-y-2 animate-fade-in pt-4 border-t border-slate-100">
-                  <div className="flex items-center justify-between w-full max-w-[360px] px-1">
-                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider font-mono">
-                      16:9 Landscape
-                    </span>
-                    <span className="text-[9px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-bold font-mono">
-                      Landscape
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 w-full justify-center">
+              <div className="w-full flex flex-col items-center space-y-2 animate-fade-in pt-4 border-t border-slate-100">
+                <div className="flex items-center justify-between w-full max-w-[360px] px-1">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider font-mono">
+                    16:9 Landscape
+                  </span>
+                  <span className="text-[9px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-bold font-mono">
+                    Landscape
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 w-full justify-center">
+                  {/* Container for 16:9 image or loader */}
+                  {(isLoading || refreshingAspect === "16:9") ? (
+                    activeItem.imageUrl169 ? (
+                      <div className="relative overflow-hidden rounded-xl shadow-xl border border-slate-200 bg-slate-950 w-full max-w-[360px] aspect-[16/9]">
+                        <img
+                          src={activeItem.imageUrl169}
+                          alt={`${activeItem.title || "Branded Visual"} - 16:9`}
+                          className="w-full h-full object-contain opacity-50"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute inset-0 bg-slate-900/60 flex flex-col items-center justify-center text-center p-4">
+                          <RefreshCw className="w-8 h-8 text-red-400 animate-spin mb-2" />
+                          <span className="text-[10px] font-bold text-white uppercase tracking-wider">Refreshing 16:9...</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="relative overflow-hidden rounded-xl shadow-xl border border-slate-200 bg-slate-50 w-full max-w-[360px] aspect-[16/9] flex flex-col items-center justify-center text-center p-4 animate-pulse">
+                        <div className="relative w-12 h-12 rounded-full bg-red-50 flex items-center justify-center border border-red-100 shadow-md mb-2">
+                          <RefreshCw className="w-6 h-6 text-red-500 animate-spin" />
+                        </div>
+                        <span className="text-[11px] font-bold text-slate-700 font-display">Generating 16:9 Image...</span>
+                        <span className="text-[9px] text-slate-400 mt-0.5 font-mono">Tyzenr API Request</span>
+                      </div>
+                    )
+                  ) : activeItem.imageUrl169 ? (
                     <div 
                       className="relative overflow-hidden rounded-xl shadow-xl border border-slate-200 bg-slate-950 transition-all duration-300 cursor-pointer hover:border-indigo-400 w-full max-w-[360px] aspect-[16/9]"
                       onClick={() => setFullscreenImgUrl(activeItem.imageUrl169 || null)}
@@ -581,7 +679,15 @@ export default function PreviewPane({
                         referrerPolicy="no-referrer"
                       />
                     </div>
-                    {/* Compact actions block to the right */}
+                  ) : (
+                    <div className="relative overflow-hidden rounded-xl border border-dashed border-slate-300 bg-slate-50/50 w-full max-w-[360px] aspect-[16/9] flex flex-col items-center justify-center text-center p-4">
+                      <Sparkles className="w-8 h-8 text-slate-300 mb-2" />
+                      <span className="text-[11px] font-medium text-slate-400">16:9 Picture Not Generated</span>
+                    </div>
+                  )}
+
+                  {/* Actions for 16:9 */}
+                  {activeItem.imageUrl169 && (
                     <div className="flex flex-col gap-1.5 p-1 bg-slate-50 rounded-lg border border-slate-200 self-center">
                       <button
                         type="button"
@@ -594,7 +700,7 @@ export default function PreviewPane({
                       <button
                         type="button"
                         onClick={() => onRefreshSingleImage?.("16:9")}
-                        disabled={refreshingAspect !== null || isLoading}
+                        disabled={refreshingAspect === "16:9" || isLoading}
                         className="p-1.5 hover:bg-red-50 rounded text-red-400 hover:text-red-600 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                         title="Generate Again / Refresh (Gen)"
                       >
@@ -614,6 +720,18 @@ export default function PreviewPane({
                       </button>
                       <button
                         type="button"
+                        onClick={() => setHistoryAspect(prev => prev === "16:9" ? null : "16:9")}
+                        className={`p-1.5 rounded transition-colors cursor-pointer ${
+                          historyAspect === "16:9"
+                            ? "bg-indigo-100 text-indigo-600 hover:bg-indigo-200"
+                            : "hover:bg-slate-200 text-slate-600 hover:text-indigo-600"
+                        }`}
+                        title="View Picture History"
+                      >
+                        <History className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleDownloadSpecific(activeItem.imageUrl169!, "-16_9")}
                         className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
                         title="Download Picture"
@@ -621,9 +739,9 @@ export default function PreviewPane({
                         <Download className="w-3.5 h-3.5" />
                       </button>
                     </div>
-                  </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           ) : (
             <div className="text-center p-6 flex flex-col items-center">

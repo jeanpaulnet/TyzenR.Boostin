@@ -12,6 +12,9 @@ export interface ScannedItem {
   resolution?: string;
   timestamp: number;
   pastImageUrls?: string[];
+  pastImageUrls11?: string[];
+  pastImageUrls169?: string[];
+  pastImageUrls916?: string[];
   imageUrl916?: string;
   imageUrl169?: string;
   imageUrl11?: string;

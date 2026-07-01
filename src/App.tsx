@@ -39,6 +39,7 @@ export default function App() {
   const [loadingStep, setLoadingStep] = useState<"scrape" | "copy" | "image" | "azure">("scrape");
   const [imageError, setImageError] = useState<string | null>(null);
   const [refreshingAspect, setRefreshingAspect] = useState<"1:1" | "9:16" | "16:9" | null>(null);
+  const [autoSwitchMessage, setAutoSwitchMessage] = useState<string | null>(null);
 
   // Load persistence from LocalStorage
   useEffect(() => {
@@ -183,6 +184,7 @@ export default function App() {
     imageUrl?: string;
     imageUrl916?: string;
     imageUrl169?: string;
+    imageUrl11?: string;
   }) => {
     if (fields.title !== undefined) setScannedTitle(fields.title);
     if (fields.description !== undefined) setScannedDescription(cleanDescription(fields.description));
@@ -200,6 +202,7 @@ export default function App() {
             imageUrl: fields.imageUrl !== undefined ? fields.imageUrl : item.imageUrl,
             imageUrl916: fields.imageUrl916 !== undefined ? fields.imageUrl916 : item.imageUrl916,
             imageUrl169: fields.imageUrl169 !== undefined ? fields.imageUrl169 : item.imageUrl169,
+            imageUrl11: fields.imageUrl11 !== undefined ? fields.imageUrl11 : item.imageUrl11,
           };
         }
         return item;
@@ -301,6 +304,9 @@ export default function App() {
           aspectRatio,
           timestamp: Date.now(),
           pastImageUrls: [],
+          pastImageUrls11: [],
+          pastImageUrls169: [],
+          pastImageUrls916: [],
         };
         updated = [newItem, ...items];
         targetId = newItem.id;
@@ -323,6 +329,7 @@ export default function App() {
     setIsGeneratingImage(true);
     setLoadingStep("image");
     setImageError(null);
+    setAutoSwitchMessage(null);
 
     try {
       const activeItem = items.find((item) => item.id === selectedId);
@@ -348,6 +355,7 @@ export default function App() {
           const fallbackModel = currentModel === "gpt" ? "gemini" : "gpt";
           console.warn(`[Auto-Switch] Status 500. Retrying ${aspect} generation with fallback model: ${fallbackModel}`);
           setModel(fallbackModel);
+          setAutoSwitchMessage(`Auto-switched from ${currentModel === "gpt" ? "DALL-E 3 (GPT)" : "Gemini"} to ${fallbackModel === "gpt" ? "DALL-E 3 (GPT)" : "Gemini"} due to generation failure.`);
           currentModel = fallbackModel;
 
           imageResponse = await fetch("/ai/picture/url", {
@@ -403,6 +411,9 @@ export default function App() {
         const updated = prevItems.map((item) => {
           if (item.id === selectedId) {
             const newPast = [...(item.pastImageUrls || [])];
+            const newPast11 = [...(item.pastImageUrls11 || [])];
+            const newPast169 = [...(item.pastImageUrls169 || [])];
+            const newPast916 = [...(item.pastImageUrls916 || [])];
 
             let imageUrl = item.imageUrl;
             let azureUrl = item.azureUrl;
@@ -422,8 +433,13 @@ export default function App() {
               azureUrl11 = res11.azureUrl;
               azureStatus11 = res11.azureStatus || "Success";
 
-              if (imageUrl && !newPast.includes(imageUrl)) {
-                newPast.push(imageUrl);
+              if (imageUrl) {
+                if (!newPast.includes(imageUrl)) {
+                  newPast.push(imageUrl);
+                }
+                if (!newPast11.includes(imageUrl)) {
+                  newPast11.push(imageUrl);
+                }
               }
             }
 
@@ -432,8 +448,8 @@ export default function App() {
               azureUrl169 = res169.azureUrl;
               azureStatus169 = res169.azureStatus || "Success";
 
-              if (imageUrl169 && !newPast.includes(imageUrl169)) {
-                newPast.push(imageUrl169);
+              if (imageUrl169 && !newPast169.includes(imageUrl169)) {
+                newPast169.push(imageUrl169);
               }
             }
 
@@ -451,6 +467,9 @@ export default function App() {
               azureStatus169,
               model: initialModel,
               pastImageUrls: newPast,
+              pastImageUrls11: newPast11,
+              pastImageUrls169: newPast169,
+              pastImageUrls916: newPast916,
             };
           }
           return item;
@@ -472,6 +491,7 @@ export default function App() {
     if (!selectedId) return;
     setRefreshingAspect(aspectRatio);
     setImageError(null);
+    setAutoSwitchMessage(null);
 
     try {
       const activeItem = items.find((item) => item.id === selectedId);
@@ -497,6 +517,7 @@ export default function App() {
         const fallbackModel = currentModel === "gpt" ? "gemini" : "gpt";
         console.warn(`[Auto-Switch] Status 500. Retrying generation with fallback model: ${fallbackModel}`);
         setModel(fallbackModel);
+        setAutoSwitchMessage(`Auto-switched from ${currentModel === "gpt" ? "DALL-E 3 (GPT)" : "Gemini"} to ${fallbackModel === "gpt" ? "DALL-E 3 (GPT)" : "Gemini"} due to generation failure.`);
         currentModel = fallbackModel;
 
         response = await fetch("/ai/picture/url", {
@@ -530,8 +551,19 @@ export default function App() {
       const updated = items.map((item) => {
         if (item.id === selectedId) {
           const newPast = [...(item.pastImageUrls || [])];
-          if (imageUrl && !newPast.includes(imageUrl)) {
-            newPast.push(imageUrl);
+          const newPast11 = [...(item.pastImageUrls11 || [])];
+          const newPast169 = [...(item.pastImageUrls169 || [])];
+          const newPast916 = [...(item.pastImageUrls916 || [])];
+
+          if (imageUrl) {
+            if (aspectRatio === "1:1") {
+              if (!newPast.includes(imageUrl)) newPast.push(imageUrl);
+              if (!newPast11.includes(imageUrl)) newPast11.push(imageUrl);
+            } else if (aspectRatio === "16:9") {
+              if (!newPast169.includes(imageUrl)) newPast169.push(imageUrl);
+            } else if (aspectRatio === "9:16") {
+              if (!newPast916.includes(imageUrl)) newPast916.push(imageUrl);
+            }
           }
 
           return {
@@ -549,6 +581,9 @@ export default function App() {
             azureUrl169: aspectRatio === "16:9" ? (azureUrl || item.azureUrl169) : item.azureUrl169,
             azureStatus169: aspectRatio === "16:9" ? azureStatus : item.azureStatus169,
             pastImageUrls: newPast,
+            pastImageUrls11: newPast11,
+            pastImageUrls169: newPast169,
+            pastImageUrls916: newPast916,
           };
         }
         return item;
@@ -660,6 +695,8 @@ export default function App() {
               setImageError={setImageError}
               refreshingAspect={refreshingAspect}
               onRefreshSingleImage={handleRefreshSingleImage}
+              autoSwitchMessage={autoSwitchMessage}
+              onClearAutoSwitchMessage={() => setAutoSwitchMessage(null)}
             />
           </div>
 
