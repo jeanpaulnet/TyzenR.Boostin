@@ -591,7 +591,9 @@ app.post("/ai/picture/url", async (req, res) => {
     model,
     aspectRatio,
     subtitle,
-    watermark
+    watermark,
+    title,
+    description
   } = req.body;
 
   if (!url) {
@@ -611,8 +613,8 @@ app.post("/ai/picture/url", async (req, res) => {
       .replace(/{settings\.watermark}/g, watermark || "Watermark")
       .replace(/{company\.name}/g, subtitle || "Your Biz")
       .replace(/{watermark}/g, watermark || "Watermark")
-      .replace(/{title}/g, "")
-      .replace(/{description}/g, "");
+      .replace(/{title}/g, title || "")
+      .replace(/{description}/g, description || "");
   }
 
   // Enforce padding for any text/headings/subheadings to prevent clipping on generated canvas edges

@@ -60,7 +60,7 @@ export default function PreviewPane({
   const [showPublishToast, setShowPublishToast] = useState(false);
   const [publishedVersion, setPublishedVersion] = useState("");
   const [imageLoadErrors, setImageLoadErrors] = useState<Record<string, boolean>>({});
-  const [copiedHistoryIdx, setCopiedHistoryIdx] = useState<number | null>(null);
+  const [copiedHistoryUrl, setCopiedHistoryUrl] = useState<string | null>(null);
 
   const handleImageLoadError = (url: string) => {
     setImageLoadErrors((prev) => ({ ...prev, [url]: true }));
@@ -470,12 +470,13 @@ export default function PreviewPane({
               </div>
             ) : (
               <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar text-left">
-                {pastUrlsList.map((url, index) => {
+                {[...pastUrlsList].reverse().map((url, index) => {
                   const isActive = historyAspect === "1:1"
                     ? (activeItem?.imageUrl11 === url || activeItem?.imageUrl === url)
                     : historyAspect === "16:9"
                       ? activeItem?.imageUrl169 === url
                       : activeItem?.imageUrl916 === url;
+                  const displayIndex = pastUrlsList.length - index;
                   return (
                     <div
                       key={index}
@@ -510,7 +511,7 @@ export default function PreviewPane({
                         ) : (
                           <img
                             src={url}
-                            alt={`Past gen ${index + 1}`}
+                            alt={`Past gen ${displayIndex}`}
                             className="w-full h-full object-cover"
                             referrerPolicy="no-referrer"
                             onError={() => handleImageLoadError(url)}
@@ -524,7 +525,7 @@ export default function PreviewPane({
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] text-slate-400 font-mono font-bold">Picture #{index + 1}</span>
+                          <span className="text-[10px] text-slate-400 font-mono font-bold">Picture #{displayIndex}</span>
                           {isActive && (
                             <span className="text-[8px] bg-indigo-500/30 text-indigo-300 px-1.5 py-0.2 rounded font-bold uppercase tracking-wider">
                               Active
@@ -541,14 +542,14 @@ export default function PreviewPane({
                           type="button"
                           onClick={() => {
                             navigator.clipboard.writeText(url);
-                            setCopiedHistoryIdx(index);
-                            setTimeout(() => setCopiedHistoryIdx(null), 2000);
+                            setCopiedHistoryUrl(url);
+                            setTimeout(() => setCopiedHistoryUrl(null), 2000);
                           }}
                           className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-all flex items-center justify-center min-w-[28px] min-h-[28px]"
                           title="Copy URL"
                         >
                           <AnimatePresence mode="wait" initial={false}>
-                            {copiedHistoryIdx === index ? (
+                            {copiedHistoryUrl === url ? (
                               <motion.div
                                 key="check"
                                 initial={{ scale: 0, rotate: -45 }}
@@ -713,7 +714,7 @@ export default function PreviewPane({
 
                   {/* Actions for 1:1 */}
                   {activeItem && (
-                    <div className="flex flex-col justify-between h-[300px] py-0.5 shrink-0">
+                    <div className="flex flex-col py-0.5 shrink-0">
                       <div className="flex flex-col gap-1.5 p-1 bg-slate-50 rounded-lg border border-slate-200">
                         {activeItem.imageUrl && (
                           <button
@@ -774,20 +775,7 @@ export default function PreviewPane({
                             </AnimatePresence>
                           </button>
                         )}
-                        {activeItem.imageUrl && (
-                          <button
-                            type="button"
-                            onClick={() => handleDownloadSpecific(activeItem.imageUrl, "-1_1")}
-                            className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
-                            title="Download Picture"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-
-                      {(activeItem.imageUrl || (activeItem.pastImageUrls11 && activeItem.pastImageUrls11.length > 0)) && (
-                        <div className="flex flex-col p-1 bg-slate-50 rounded-lg border border-slate-200">
+                        {(activeItem.imageUrl || (activeItem.pastImageUrls11 && activeItem.pastImageUrls11.length > 0)) && (
                           <button
                             type="button"
                             onClick={() => setHistoryAspect(prev => prev === "1:1" ? null : "1:1")}
@@ -800,8 +788,18 @@ export default function PreviewPane({
                           >
                             <History className="w-3.5 h-3.5" />
                           </button>
-                        </div>
-                      )}
+                        )}
+                        {activeItem.imageUrl && (
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadSpecific(activeItem.imageUrl, "-1_1")}
+                            className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
+                            title="Download Picture"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -873,7 +871,7 @@ export default function PreviewPane({
 
                   {/* Actions for 16:9 */}
                   {activeItem && (
-                    <div className="flex flex-col justify-between h-[202px] py-0.5 shrink-0">
+                    <div className="flex flex-col py-0.5 shrink-0">
                       <div className="flex flex-col gap-1.5 p-1 bg-slate-50 rounded-lg border border-slate-200">
                         {activeItem.imageUrl169 && (
                           <button
@@ -934,20 +932,7 @@ export default function PreviewPane({
                             </AnimatePresence>
                           </button>
                         )}
-                        {activeItem.imageUrl169 && (
-                          <button
-                            type="button"
-                            onClick={() => handleDownloadSpecific(activeItem.imageUrl169!, "-16_9")}
-                            className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
-                            title="Download Picture"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-
-                      {(activeItem.imageUrl169 || (activeItem.pastImageUrls169 && activeItem.pastImageUrls169.length > 0)) && (
-                        <div className="flex flex-col p-1 bg-slate-50 rounded-lg border border-slate-200">
+                        {(activeItem.imageUrl169 || (activeItem.pastImageUrls169 && activeItem.pastImageUrls169.length > 0)) && (
                           <button
                             type="button"
                             onClick={() => setHistoryAspect(prev => prev === "16:9" ? null : "16:9")}
@@ -960,8 +945,18 @@ export default function PreviewPane({
                           >
                             <History className="w-3.5 h-3.5" />
                           </button>
-                        </div>
-                      )}
+                        )}
+                        {activeItem.imageUrl169 && (
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadSpecific(activeItem.imageUrl169!, "-16_9")}
+                            className="p-1.5 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
+                            title="Download Picture"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>

@@ -85,18 +85,27 @@ export default function App() {
       const savedItems = localStorage.getItem("boostin_items");
       if (savedItems) {
         const parsed = JSON.parse(savedItems);
-        // Clean loaded descriptions
-        const cleanedItems = parsed.map((item: any) => ({
-          ...item,
-          description: item.description ? item.description.replace(/\\n/g, "\n").replace(/\r\n/g, "\n").replace(/\n\n+/g, "\n\n").trim() : ""
-        }));
+        // Clean loaded descriptions and prepend titles if separate
+        const cleanedItems = parsed.map((item: any) => {
+          const itemTitle = item.title || "";
+          const itemDesc = item.description ? item.description.replace(/\\n/g, "\n").replace(/\r\n/g, "\n").replace(/\n\n+/g, "\n\n").trim() : "";
+          let finalDesc = itemDesc;
+          if (itemTitle && !itemDesc.startsWith(itemTitle)) {
+            finalDesc = `${itemTitle}\n${itemDesc}`;
+          }
+          return {
+            ...item,
+            title: "",
+            description: finalDesc,
+          };
+        });
         setItems(cleanedItems);
         if (cleanedItems.length > 0) {
           setSelectedId(cleanedItems[0].id);
-          setScannedTitle(cleanedItems[0].title);
+          setScannedTitle("");
           setScannedDescription(cleanedItems[0].description);
-          setScannedPrompt(parsed[0].imagePrompt);
-          setModel(parsed[0].model || "gpt");
+          setScannedPrompt(cleanedItems[0].imagePrompt);
+          setModel(cleanedItems[0].model || "gpt");
           setAspectRatio("1:1");
         }
       }
@@ -137,7 +146,7 @@ export default function App() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               url: activeItem.url,
-              title: activeItem.title,
+              title: activeItem.title || getTitleFromDesc(activeItem.description),
               description: activeItem.description,
               bizName: newSettings.bizName,
               watermark: newSettings.watermark,
@@ -167,6 +176,11 @@ export default function App() {
     }
   };
 
+  const getTitleFromDesc = (desc: string): string => {
+    if (!desc) return "";
+    return desc.trim().split("\n")[0] || "";
+  };
+
   const cleanDescription = (desc: string): string => {
     if (!desc) return "";
     return desc
@@ -179,8 +193,14 @@ export default function App() {
   // Selecting an item from the library
   const handleSelectItem = (item: ScannedItem) => {
     setSelectedId(item.id);
-    setScannedTitle(item.title);
-    setScannedDescription(cleanDescription(item.description));
+    const itemTitle = item.title || "";
+    const itemDesc = cleanDescription(item.description);
+    let finalDesc = itemDesc;
+    if (itemTitle && !itemDesc.startsWith(itemTitle)) {
+      finalDesc = `${itemTitle}\n${itemDesc}`;
+    }
+    setScannedTitle("");
+    setScannedDescription(finalDesc);
     setScannedPrompt(item.imagePrompt);
     setModel(item.model || "gpt");
     setAspectRatio("1:1");
@@ -355,9 +375,13 @@ export default function App() {
         .replace(/{company\.name}/g, settings.bizName || "Your Biz")
         .replace(/{watermark}/g, settings.watermark || "Watermark");
 
+      const scanTitle = scanData.title || "";
+      const scanDesc = cleanDescription(scanData.description || "");
+      const combinedDesc = scanTitle ? `${scanTitle}\n${scanDesc}` : scanDesc;
+
       setLoadingStep("copy");
-      setScannedTitle(scanData.title || "");
-      setScannedDescription(cleanDescription(scanData.description || ""));
+      setScannedTitle("");
+      setScannedDescription(combinedDesc);
       setScannedPrompt(compiledImagePrompt);
 
       // Step 2: Update item details without auto-generating pictures.
@@ -382,8 +406,8 @@ export default function App() {
         const existingItem = items[existingItemIndex];
         const updatedItem: ScannedItem = {
           ...existingItem,
-          title: scanData.title,
-          description: cleanDescription(scanData.description),
+          title: "",
+          description: combinedDesc,
           imagePrompt: scanData.imagePrompt,
           model,
           aspectRatio,
@@ -398,8 +422,8 @@ export default function App() {
         const newItem: ScannedItem = {
           id: `boost_${Date.now()}`,
           url,
-          title: scanData.title,
-          description: cleanDescription(scanData.description),
+          title: "",
+          description: combinedDesc,
           imagePrompt: scanData.imagePrompt,
           imageUrl: "",
           azureUrl: "",
@@ -459,6 +483,7 @@ export default function App() {
       const generateSingleAspect = async (aspect: "1:1" | "16:9") => {
         let currentModel = initialModel;
         const promptToUse = aspect === "16:9" ? settings.detailedPromptTemplate : settings.promptTemplate;
+        const resolvedTitle = activeItem.title || getTitleFromDesc(activeItem.description);
         let imageResponse = await fetch("/ai/picture/url", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -469,6 +494,8 @@ export default function App() {
             aspectRatio: aspect,
             subtitle: settings.bizName,
             watermark: settings.watermark,
+            title: resolvedTitle,
+            description: activeItem.description,
           }),
         });
 
@@ -489,6 +516,8 @@ export default function App() {
               aspectRatio: aspect,
               subtitle: settings.bizName,
               watermark: settings.watermark,
+              title: resolvedTitle,
+              description: activeItem.description,
             }),
           });
         }
@@ -639,6 +668,7 @@ export default function App() {
       if (!activeItem) throw new Error("No active URL item selected to regenerate image for");
 
       let currentModel = model;
+      const resolvedTitle = activeItem.title || getTitleFromDesc(activeItem.description);
       let response = await fetch("/ai/picture/url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -649,6 +679,8 @@ export default function App() {
           aspectRatio: aspectRatio,
           subtitle: settings.bizName,
           watermark: settings.watermark,
+          title: resolvedTitle,
+          description: activeItem.description,
         }),
       });
 
@@ -669,6 +701,8 @@ export default function App() {
             aspectRatio: aspectRatio,
             subtitle: settings.bizName,
             watermark: settings.watermark,
+            title: resolvedTitle,
+            description: activeItem.description,
           }),
         });
       }
@@ -687,62 +721,66 @@ export default function App() {
       const azureUrl = imageData.azureUrl;
       const azureStatus = imageData.azureStatus || "Success";
 
-      const updated = items.map((item) => {
-        if (item.id === selectedId) {
-          const newPast = [...(item.pastImageUrls || [])];
-          const newPast11 = [...(item.pastImageUrls11 || [])];
-          const newPast169 = [...(item.pastImageUrls169 || [])];
-          const newPast916 = [...(item.pastImageUrls916 || [])];
+      setItems((prevItems) => {
+        const updated = prevItems.map((item) => {
+          if (item.id === selectedId) {
+            const newPast = [...(item.pastImageUrls || [])];
+            const newPast11 = [...(item.pastImageUrls11 || [])];
+            const newPast169 = [...(item.pastImageUrls169 || [])];
+            const newPast916 = [...(item.pastImageUrls916 || [])];
 
-          // Ensure pre-existing active images are preserved in history before overwriting
-          if (item.imageUrl && !newPast.includes(item.imageUrl)) {
-            newPast.push(item.imageUrl);
-          }
-          if (item.imageUrl11 && !newPast11.includes(item.imageUrl11)) {
-            newPast11.push(item.imageUrl11);
-          }
-          if (item.imageUrl169 && !newPast169.includes(item.imageUrl169)) {
-            newPast169.push(item.imageUrl169);
-          }
-          if (item.imageUrl916 && !newPast916.includes(item.imageUrl916)) {
-            newPast916.push(item.imageUrl916);
-          }
-
-          if (imageUrl) {
-            if (aspectRatio === "1:1") {
-              if (!newPast.includes(imageUrl)) newPast.push(imageUrl);
-              if (!newPast11.includes(imageUrl)) newPast11.push(imageUrl);
-            } else if (aspectRatio === "16:9") {
-              if (!newPast169.includes(imageUrl)) newPast169.push(imageUrl);
-            } else if (aspectRatio === "9:16") {
-              if (!newPast916.includes(imageUrl)) newPast916.push(imageUrl);
+            // Ensure pre-existing active images are preserved in history before overwriting
+            if (item.imageUrl && !newPast.includes(item.imageUrl)) {
+              newPast.push(item.imageUrl);
             }
-          }
+            if (item.imageUrl11 && !newPast11.includes(item.imageUrl11)) {
+              newPast11.push(item.imageUrl11);
+            }
+            if (item.imageUrl169 && !newPast169.includes(item.imageUrl169)) {
+              newPast169.push(item.imageUrl169);
+            }
+            if (item.imageUrl916 && !newPast916.includes(item.imageUrl916)) {
+              newPast916.push(item.imageUrl916);
+            }
 
-          return {
-            ...item,
-            imageUrl: aspectRatio === "1:1" ? (imageUrl || item.imageUrl) : item.imageUrl,
-            azureUrl: aspectRatio === "1:1" ? (azureUrl || item.azureUrl) : item.azureUrl,
-            azureStatus: aspectRatio === "1:1" ? azureStatus : item.azureStatus,
-            imageUrl11: aspectRatio === "1:1" ? (imageUrl || item.imageUrl11) : item.imageUrl11,
-            azureUrl11: aspectRatio === "1:1" ? (azureUrl || item.azureUrl11) : item.azureUrl11,
-            azureStatus11: aspectRatio === "1:1" ? azureStatus : item.azureStatus11,
-            imageUrl916: aspectRatio === "9:16" ? (imageUrl || item.imageUrl916) : item.imageUrl916,
-            azureUrl916: aspectRatio === "9:16" ? (azureUrl || item.azureUrl916) : item.azureUrl916,
-            azureStatus916: aspectRatio === "9:16" ? azureStatus : item.azureStatus916,
-            imageUrl169: aspectRatio === "16:9" ? (imageUrl || item.imageUrl169) : item.imageUrl169,
-            azureUrl169: aspectRatio === "16:9" ? (azureUrl || item.azureUrl169) : item.azureUrl169,
-            azureStatus169: aspectRatio === "16:9" ? azureStatus : item.azureStatus169,
-            pastImageUrls: newPast,
-            pastImageUrls11: newPast11,
-            pastImageUrls169: newPast169,
-            pastImageUrls916: newPast916,
-          };
-        }
-        return item;
+            if (imageUrl) {
+              if (aspectRatio === "1:1") {
+                if (!newPast.includes(imageUrl)) newPast.push(imageUrl);
+                if (!newPast11.includes(imageUrl)) newPast11.push(imageUrl);
+              } else if (aspectRatio === "16:9") {
+                if (!newPast169.includes(imageUrl)) newPast169.push(imageUrl);
+              } else if (aspectRatio === "9:16") {
+                if (!newPast916.includes(imageUrl)) newPast916.push(imageUrl);
+              }
+            }
+
+            return {
+              ...item,
+              imageUrl: aspectRatio === "1:1" ? (imageUrl || item.imageUrl) : item.imageUrl,
+              azureUrl: aspectRatio === "1:1" ? (azureUrl || item.azureUrl) : item.azureUrl,
+              azureStatus: aspectRatio === "1:1" ? azureStatus : item.azureStatus,
+              imageUrl11: aspectRatio === "1:1" ? (imageUrl || item.imageUrl11) : item.imageUrl11,
+              azureUrl11: aspectRatio === "1:1" ? (azureUrl || item.azureUrl11) : item.azureUrl11,
+              azureStatus11: aspectRatio === "1:1" ? azureStatus : item.azureStatus11,
+              imageUrl916: aspectRatio === "9:16" ? (imageUrl || item.imageUrl916) : item.imageUrl916,
+              azureUrl916: aspectRatio === "9:16" ? (azureUrl || item.azureUrl916) : item.azureUrl916,
+              azureStatus916: aspectRatio === "9:16" ? azureStatus : item.azureStatus916,
+              imageUrl169: aspectRatio === "16:9" ? (imageUrl || item.imageUrl169) : item.imageUrl169,
+              azureUrl169: aspectRatio === "16:9" ? (azureUrl || item.azureUrl169) : item.azureUrl169,
+              azureStatus169: aspectRatio === "16:9" ? azureStatus : item.azureStatus169,
+              pastImageUrls: newPast,
+              pastImageUrls11: newPast11,
+              pastImageUrls169: newPast169,
+              pastImageUrls916: newPast916,
+            };
+          }
+          return item;
+        });
+
+        localStorage.setItem("boostin_items", JSON.stringify(updated));
+        return updated;
       });
 
-      saveItems(updated);
       handlePublish();
     } catch (err: any) {
       console.error(err);

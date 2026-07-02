@@ -26,12 +26,15 @@ export default function LibraryPane({
 
   const filteredItems = items.filter((item) => {
     const s = search.toLowerCase();
+    const itemTitle = item.title || item.description.trim().split("\n")[0] || "Scanned Article";
     return (
       item.url.toLowerCase().includes(s) ||
-      item.title.toLowerCase().includes(s) ||
+      itemTitle.toLowerCase().includes(s) ||
       item.description.toLowerCase().includes(s)
     );
   });
+
+  const sortedItems = [...filteredItems].reverse();
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString(undefined, {
@@ -139,7 +142,7 @@ export default function LibraryPane({
             </p>
           </div>
         ) : (
-          filteredItems.map((item) => {
+          sortedItems.map((item) => {
             const isSelected = item.id === selectedId;
             return (
               <div
@@ -157,13 +160,13 @@ export default function LibraryPane({
                   {(item.imageUrl916 || item.imageUrl169 || item.imageUrl) && !failedUrls[item.imageUrl916 || item.imageUrl169 || item.imageUrl || ""] ? (
                     <img
                       src={item.imageUrl916 || item.imageUrl169 || item.imageUrl}
-                      alt={item.title}
+                      alt={item.title || item.description.trim().split("\n")[0] || "Scanned Article"}
                       className="w-full h-full object-cover"
                       referrerPolicy="no-referrer"
                       onError={() => {
                         const targetUrl = item.imageUrl916 || item.imageUrl169 || item.imageUrl || "";
                         if (targetUrl) {
-                          setFailedUrls((prev) => ({ ...prev, [targetUrl]: true }));
+                           setFailedUrls((prev) => ({ ...prev, [targetUrl]: true }));
                         }
                       }}
                     />
@@ -181,7 +184,7 @@ export default function LibraryPane({
                 {/* Text Metadata */}
                 <div className="flex-1 min-w-0 pr-6">
                   <h4 className="text-xs font-semibold text-slate-900 truncate leading-tight">
-                    {item.title || "Scanned Article"}
+                    {item.title || item.description.trim().split("\n")[0] || "Scanned Article"}
                   </h4>
                   <p className="text-[10px] text-slate-500 truncate mt-1 font-mono flex items-center gap-1">
                     <Link2 className="w-2.5 h-2.5 text-slate-400 flex-shrink-0" />

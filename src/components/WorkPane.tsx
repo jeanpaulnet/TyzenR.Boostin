@@ -177,30 +177,14 @@ export default function WorkPane({
       )}
 
       {/* Refine Copy and Metadata */}
-      {(scannedTitle || scannedDescription) && !isLoading && (
+       {(scannedTitle || scannedDescription) && !isLoading && (
         <div className="border-t border-slate-200 pt-5 space-y-5">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider font-display">Refine Scanned Metadata</h3>
             <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Ready to Share</span>
           </div>
 
-          {/* Article Title - Moved up before description */}
-          <div className="space-y-1.5">
-            <label className="inline-block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent uppercase tracking-wider font-display pb-0.5 pr-1">
-              Article Title
-            </label>
-            <input
-              id="scanned-title-input"
-              type="text"
-              value={scannedTitle}
-              onChange={(e) => onUpdateScannedFields({ title: e.target.value })}
-              placeholder="Article title will appear here after scanning..."
-              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:bg-white"
-              disabled={isLoading}
-            />
-          </div>
-
-          {/* Article Description & Summary - Moved below title */}
+          {/* Article Description & Summary */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <label className="inline-block text-xs font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent uppercase tracking-wider font-display pb-0.5 pr-1">
