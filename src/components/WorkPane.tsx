@@ -142,7 +142,7 @@ export default function WorkPane({
           <div className="space-y-2">
             {[
               { key: "scrape", label: "Extracting metadata and text from target webpage" },
-              { key: "copy", label: "Engaging Gemini to write click-worthy social copy" },
+              { key: "copy", label: "Generating click-worthy social copy" },
               { key: "image", label: `Invoking selected AI model to generate visual asset` }
             ].map((step, idx) => {
               const activeIdx = ["scrape", "copy", "image", "azure"].indexOf(loadingStep);

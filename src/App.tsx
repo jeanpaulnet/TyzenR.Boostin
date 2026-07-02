@@ -292,57 +292,72 @@ export default function App() {
     setImageError(null);
 
     try {
-      // Step 1: Scrape & Copywrite via Gemini
+      // Step 1: Scrape & Copywrite via webapi.tyzenr.com
       setLoadingStep("scrape");
       let scanResponse;
+      let scanData: any = null;
+      let apiSucceeded = false;
+
+      // Try POST first
       try {
-        scanResponse = await fetch("/api/scan", {
+        scanResponse = await fetch("https://webapi.tyzenr.com/ai/summary/url", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+          },
           body: JSON.stringify({
-            url,
-            bizName: settings.bizName,
-            website: settings.website,
-            watermark: settings.watermark,
-            promptTemplate: settings.promptTemplate,
-            commonTags: settings.commonTags,
+            model: "gemini",
+            url: url,
+            tags: settings.commonTags || "",
           }),
         });
-      } catch (networkErr: any) {
-        throw new Error(`Network error connection failed: ${networkErr.message || networkErr}. Please verify that the full-stack server is running and accessible.`);
-      }
 
-      if (!scanResponse.ok) {
-        let serverErrorMsg = "";
-        try {
-          const errJson = await scanResponse.json();
-          serverErrorMsg = errJson.error || errJson.message || JSON.stringify(errJson);
-        } catch (_) {
-          try {
-            const errText = await scanResponse.text();
-            serverErrorMsg = errText.substring(0, 150) || scanResponse.statusText;
-          } catch (__) {
-            serverErrorMsg = scanResponse.statusText;
-          }
+        if (scanResponse.ok) {
+          scanData = await scanResponse.json();
+          apiSucceeded = !!(scanData && (scanData.title || scanData.description));
         }
-        throw new Error(`Server returned HTTP ${scanResponse.status}: ${serverErrorMsg}. Please check your server deployment and configuration.`);
+      } catch (postErr) {
+        console.warn("POST to webapi.tyzenr.com failed, trying GET fallback:", postErr);
       }
 
-      let scanData;
-      try {
-        scanData = await scanResponse.json();
-      } catch (jsonErr: any) {
-        throw new Error(`Invalid response format from server (expected JSON, but parsing failed: ${jsonErr.message}). If you deployed to a static host, please ensure the backend Express server is running and correctly routing /api/ requests.`);
+      // Try GET fallback if POST didn't succeed
+      if (!apiSucceeded) {
+        try {
+          const queryParams = new URLSearchParams({
+            model: "gemini",
+            url: url,
+            tags: settings.commonTags || "",
+          });
+          scanResponse = await fetch(`https://webapi.tyzenr.com/ai/summary/url?${queryParams.toString()}`, {
+            headers: { "Accept": "application/json" },
+          });
+
+          if (scanResponse.ok) {
+            scanData = await scanResponse.json();
+            apiSucceeded = !!(scanData && (scanData.title || scanData.description));
+          }
+        } catch (getErr: any) {
+          throw new Error(`Failed to fetch summary from API: ${getErr.message || getErr}`);
+        }
       }
 
-      if (!scanData.success) {
-        throw new Error(scanData.error || "Webpage scanning returned an error.");
+      if (!apiSucceeded || !scanData) {
+        throw new Error("Failed to retrieve summary (title and description) from the Tyzenr API. Please ensure the target URL is accessible.");
       }
+
+      const template = settings.promptTemplate || "create an ultra-realistic corporate financial like detailed picture with vivid colors summarizing content of {url}. Create title from article on top. Create subtitle '{settings.business.name}' on bottom with watermark '{settings.watermark}' below it.";
+      const compiledImagePrompt = template
+        .replace(/{url}/g, url || "")
+        .replace(/{settings\.business\.name}/g, settings.bizName || "Your Biz")
+        .replace(/{settings\.watermark}/g, settings.watermark || "Watermark")
+        .replace(/{company\.name}/g, settings.bizName || "Your Biz")
+        .replace(/{watermark}/g, settings.watermark || "Watermark");
 
       setLoadingStep("copy");
-      setScannedTitle(scanData.title);
-      setScannedDescription(cleanDescription(scanData.description));
-      setScannedPrompt(scanData.imagePrompt);
+      setScannedTitle(scanData.title || "");
+      setScannedDescription(cleanDescription(scanData.description || ""));
+      setScannedPrompt(compiledImagePrompt);
 
       // Step 2: Update item details without auto-generating pictures.
       // Check if URL already exists in history to satisfy: "HISTORY should be created only if URL changed."
