@@ -58,6 +58,7 @@ export default function App() {
   // UI Selection States
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isLibraryCollapsed, setIsLibraryCollapsed] = useState(true);
 
   // Active / Working Fields
   const [scannedTitle, setScannedTitle] = useState("");
@@ -811,19 +812,8 @@ export default function App() {
         {/* Responsive 3-Pane grid layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
           
-          {/* Pane 1: Library Pane (Span 3) */}
-          <div className="lg:col-span-3 flex flex-col h-[calc(100vh-220px)] lg:h-[720px]">
-            <LibraryPane
-              items={items}
-              selectedId={selectedId}
-              onSelectItem={handleSelectItem}
-              onDeleteItem={handleDeleteItem}
-              onClearAll={handleClearAll}
-            />
-          </div>
-
-          {/* Pane 2: Work Pane (Span 5) */}
-          <div className="lg:col-span-5 flex flex-col h-[calc(100vh-220px)] lg:h-[720px] overflow-y-auto">
+          {/* Pane 1: Work Pane (Span 7 when collapsed, 5 when expanded) */}
+          <div className={`${isLibraryCollapsed ? "lg:col-span-7" : "lg:col-span-5"} flex flex-col h-[calc(100vh-220px)] lg:h-[720px] overflow-y-auto transition-all duration-300`}>
             <WorkPane
               onScan={handleScan}
               isLoading={isLoading}
@@ -839,7 +829,7 @@ export default function App() {
             />
           </div>
 
-          {/* Pane 3: Preview Pane (Span 4) */}
+          {/* Pane 2: Preview Pane (Span 4) */}
           <div className="lg:col-span-4 flex flex-col h-[calc(100vh-220px)] lg:h-[720px]">
             <PreviewPane
               activeItem={getActiveItem()}
@@ -860,6 +850,19 @@ export default function App() {
               autoSwitchMessage={autoSwitchMessage}
               onClearAutoSwitchMessage={() => setAutoSwitchMessage(null)}
               onPublish={handlePublish}
+            />
+          </div>
+
+          {/* Pane 3: Library Pane / GALLERY HISTORY (Span 1 when collapsed, 3 when expanded) */}
+          <div className={`${isLibraryCollapsed ? "lg:col-span-1" : "lg:col-span-3"} flex flex-col h-[calc(100vh-220px)] lg:h-[720px] transition-all duration-300`}>
+            <LibraryPane
+              items={items}
+              selectedId={selectedId}
+              onSelectItem={handleSelectItem}
+              onDeleteItem={handleDeleteItem}
+              onClearAll={handleClearAll}
+              isCollapsed={isLibraryCollapsed}
+              onToggleCollapse={() => setIsLibraryCollapsed(!isLibraryCollapsed)}
             />
           </div>
 

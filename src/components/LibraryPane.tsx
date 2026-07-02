@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Search, Trash2, Calendar, Link2, FolderHeart, Sparkles } from "lucide-react";
+import { Search, Trash2, Calendar, Link2, FolderHeart, Sparkles, ChevronLeft, ChevronRight } from "lucide-react";
 import { ScannedItem } from "../types";
 
 interface LibraryPaneProps {
@@ -8,6 +8,8 @@ interface LibraryPaneProps {
   onSelectItem: (item: ScannedItem) => void;
   onDeleteItem: (id: string) => void;
   onClearAll: () => void;
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
 export default function LibraryPane({
@@ -16,6 +18,8 @@ export default function LibraryPane({
   onSelectItem,
   onDeleteItem,
   onClearAll,
+  isCollapsed,
+  onToggleCollapse,
 }: LibraryPaneProps) {
   const [search, setSearch] = useState("");
   const [failedUrls, setFailedUrls] = useState<Record<string, boolean>>({});
@@ -46,6 +50,34 @@ export default function LibraryPane({
     }
   };
 
+  if (isCollapsed) {
+    return (
+      <div className="flex flex-col items-center h-full bg-white/80 backdrop-blur-md border border-slate-200/80 rounded-2xl shadow-xl overflow-hidden py-4 px-2 transition-all duration-300">
+        <button
+          id="expand-gallery-btn"
+          onClick={onToggleCollapse}
+          className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl transition-all cursor-pointer shadow-sm hover:scale-105"
+          title="Expand GALLERY HISTORY"
+        >
+          <ChevronLeft className="w-5 h-5" />
+        </button>
+        
+        <div className="flex-1 flex flex-col items-center justify-center mt-6 space-y-6">
+          <div className="flex flex-col items-center gap-1.5 [writing-mode:vertical-lr] text-slate-400 font-display font-bold text-xs uppercase tracking-widest select-none">
+            <FolderHeart className="w-4 h-4 rotate-90 text-slate-400 mb-2" />
+            <span>GALLERY HISTORY</span>
+          </div>
+
+          {items.length > 0 && (
+            <span className="bg-indigo-100 text-indigo-700 font-bold font-mono text-[10px] px-1.5 py-0.5 rounded-full">
+              {items.length}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full bg-white/80 backdrop-blur-md border border-slate-200/80 rounded-2xl shadow-xl overflow-hidden">
       
@@ -55,18 +87,28 @@ export default function LibraryPane({
           <div className="p-1.5 bg-indigo-50 rounded-lg text-indigo-600">
             <FolderHeart className="w-4 h-4" />
           </div>
-          <span className="font-bold text-slate-800 font-display text-sm tracking-tight">URL Gallery History</span>
+          <span className="font-bold text-slate-800 font-display text-sm tracking-tight">GALLERY HISTORY</span>
         </div>
         
-        {items.length > 0 && (
+        <div className="flex items-center gap-2">
+          {items.length > 0 && (
+            <button
+              id="clear-all-btn"
+              onClick={onClearAll}
+              className="text-[11px] font-semibold text-red-600 hover:text-red-800 hover:bg-red-50 px-2.5 py-1 rounded-lg transition-all"
+            >
+              Clear All
+            </button>
+          )}
           <button
-            id="clear-all-btn"
-            onClick={onClearAll}
-            className="text-[11px] font-semibold text-red-600 hover:text-red-800 hover:bg-red-50 px-2.5 py-1 rounded-lg transition-all"
+            id="collapse-gallery-btn"
+            onClick={onToggleCollapse}
+            className="p-1.5 hover:bg-slate-200/60 text-slate-500 hover:text-slate-800 rounded-lg transition-all cursor-pointer"
+            title="Collapse GALLERY HISTORY"
           >
-            Clear All
+            <ChevronRight className="w-4 h-4" />
           </button>
-        )}
+        </div>
       </div>
 
       {/* Search Header */}
